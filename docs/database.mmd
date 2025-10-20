@@ -1,0 +1,71 @@
+---
+config:
+  layout: elk
+---
+erDiagram
+EVENT ||--o{ CAR : "competes in"
+CAR ||--o{ SCHOOL : "built by"
+%% CAR ||--o| SCRUITINEERING : "scruitineered"
+ROUND_ROBIN_RACE }o--|| EVENT : "part of"
+ROUND_ROBIN_RACE }o--|| CAR : "runs in"
+KNOCKOUT_RACE |o--|| KNOCKOUT_RACE : "next race"
+KNOCKOUT_RACE }o--|| EVENT : "runs in"
+KNOCKOUT_RACE }o--|| CAR : "runs in"
+
+EVENT {
+    int event_id PK
+    date event_date
+    string event_name
+}
+
+SCHOOL {
+    int school_id PK
+    string school_name
+}
+
+CAR {
+    int event_id PK,FK
+    int car_id PK "The number shown on the sticker."
+    int school_id FK
+    string car_name
+    bool registered
+    bool round_robin_show
+    bool knockout_show
+}
+
+%% SCRUITINEERING {
+%%     int event_id PK,FK
+%%     int car_id PK,FK
+%%     bool car_made_from_kit
+%%     bool correct_motor
+%%     bool no_electronics
+%%     bool panel_area_ok
+%%     bool poster_supplied
+%%     bool uses_banana_plugs
+%%     int chassis_build_quality "1-5"
+%%     int body_quality "1-5"
+%%     bool  student_signature
+%%     string scruit_comment
+%% }
+
+ROUND_ROBIN_RACE {
+    int event_id PK,FK
+    int race PK "Race ID in the round robin stage, counting from 0."
+    int round
+    int car_lane_1 FK "The car ID, event_id will be shared."
+    int car_lane_2 FK "The car ID, event_id will be shated."
+    int car_lane_1_points "1 for a win, 2 for a loss, 3 for a no show."
+    int car_lane_2_points "1 for a win, 2 for a loss, 3 for a no show."
+}
+
+KNOCKOUT_RACE {
+    int event_id PK,FK
+    int race PK "Race ID in the knockout stage, counting from 1."
+    int round
+    bool fixed
+    int car_lane_1 FK "The car ID, event_id will be shared."
+    int car_lane_2 FK "The car ID, event_id will be shated."
+    int winner_next_race FK "The race number for the next race the winner will compete in."
+    int loser_next_race FK "The race number for the next race the loser will compete in."
+    int winner FK "The car ID of the winning car."
+}

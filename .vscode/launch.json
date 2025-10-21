@@ -10,7 +10,8 @@
             "request": "launch",
             "program": "app/main.py",
             "console": "integratedTerminal",
-            "args": ["database/SolarChallengeDraw.sqlite"]
+            "args": ["--cars=./database/cars.csv"]
+            // "args": ["database/SolarChallengeDraw.sqlite"]
         }
     ]
 }

@@ -1,9 +1,12 @@
+"""A GUI for the application.
+Written by Jotham Gates, 20/10/2025"""
 import tkinter as tk
 from typing import Self
 import ttkbootstrap as ttk
 import ttkbootstrap.constants as ttkc
+import ttkbootstrap.tableview as tableview
 from abc import ABC, abstractmethod
-
+import datetime
 class AppTab(ABC):
     """Base class for tabs."""
     def __init__(self, root:ttk.Notebook, tab_name:str) -> None:
@@ -26,7 +29,25 @@ class EventsTab(AppTab):
         # Add new event button.
         ttk.Button(self._frame, text="Add new event").grid(row=0, column=3)
 
+        # Draw the table.
+        columns = [
+            {"text":"Event ID", "anchor":ttkc.CENTER},
+            {"text":"Event name"},
+            {"text":"Date"},
+            {"text":"# cars"}
+        ]
+
+        rows = [
+            (123, "2024 Test", datetime.date(2024, 10, 1)),
+            (124, "2025 Test", datetime.date(2025, 10, 19)),
+            (125, "2026 Test", datetime.date(2026, 10, 1)),
+        ]
+
+        dt = tableview.Tableview(self._frame, coldata=columns, rowdata=rows, paginated=True, searchable=True)
+        dt.grid(row=1, column=0, columnspan=4)
+
         self._frame.columnconfigure(2, weight=1)
+        self._frame.rowconfigure(1, weight=1)
 
 class CarsTab(AppTab):
     """Class to handle the cars tab."""

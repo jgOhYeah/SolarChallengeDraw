@@ -48,6 +48,9 @@ class Car:
             con (sqlite3.Cursor): The database connection.
         """
         con.execute("INSERT INTO ")
+    
+    def __repr__(self) -> str:
+        return f"<{self.car_id}, {self.points}>"
 
 
 def load_cars(csv_filename: str, event: Event) -> List[Car]:

@@ -53,32 +53,6 @@ class Car:
         return f"<{self.car_id}, {self.points}>"
 
 
-def load_cars(csv_filename: str, event: Event) -> List[Car]:
-    """Loads a list of cars from a CSV file.
-
-    Args:
-        csv_filename (str): The file path to load the CSV from.
-        event_id (int, optional): The ID of the event to assign to the car. Defaults to 0.
-
-    Returns:
-        List[Car]: The list of cars.
-    """
-    print(csv_filename)
-    df = pd.read_csv(csv_filename)
-    cars: List[Car] = []
-    for _, row in df.iterrows():
-        cars.append(
-            Car(
-                event=event,
-                car_id=row["car_id"],
-                school_id=row["school_id"],
-                car_name=row["car_name"],
-                points=row["points"],
-            )
-        )
-
-    return cars
-
 
 class Database:
     """Class that handles connecting to the database."""

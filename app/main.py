@@ -15,8 +15,8 @@ Written by Jotham Gates, 2025.
 import argparse
 
 import gui
-import data
 import knockout
+import car
 
 
 def get_arguments() -> argparse.Namespace:
@@ -38,16 +38,10 @@ def get_arguments() -> argparse.Namespace:
 
 if __name__ == "__main__":
     args = get_arguments()
-    # db = data.Database(args.database)
-    # with db:
-    #     # event = Event(event_name="Test event from python")
-    #     # event.insert(db.con.cursor())
-    #     gui_ui = gui.Gui()
-    #     gui_ui.run()
-    event = data.Event()
-    cars = data.load_cars(args.cars, event=event)
-    # print("Initial")
-    # initial = knockout.InitialKnockoutRound(cars)
-    # print("Subsequent")
-    # r1 = knockout.SubsequentRound(1, len(initial), initial, knockout.RoundType.WINNERS)
-    knockout.KnockoutEvent(cars)
+    cars = car.load_cars(args.cars)
+    knockout_event = knockout.KnockoutEvent(cars)
+    knockout_event.print()
+    gui_ui = gui.Gui()
+    gui_ui.knockout.draw(knockout_event)
+    gui_ui.knockout.export("test.ps")
+    gui_ui.run()

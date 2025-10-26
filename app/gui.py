@@ -2,13 +2,14 @@
 Written by Jotham Gates, 20/10/2025"""
 
 import tkinter as tk
-from typing import List, Self
+from typing import List, Self, cast
 import ttkbootstrap as ttk
 import ttkbootstrap.constants as ttkc
 import ttkbootstrap.tableview as tableview
 from abc import ABC, abstractmethod
 import datetime
 from knockout import KnockoutEvent, Race
+from car import Car
 
 
 class AppTab(ABC):
@@ -82,9 +83,9 @@ class KnockoutTab(AppTab):
         super().__init__(root, "Knockout")
 
         # Canvas to draw the draw on.
-        scale = 2.5
-        self.width = 297 * scale
-        self.height = 210 * scale
+        SCALE = 7
+        self.width = 210 * SCALE
+        self.height = 297 * SCALE
         self._canvas = ttk.Canvas(self._frame, width=self.width, height=self.height)
         self._canvas.pack(fill=ttkc.BOTH, expand=True)
 
@@ -95,15 +96,19 @@ class KnockoutTab(AppTab):
             event (KnockoutEvent): The event to plot.
         """
         HORIZONTAL_LINE_LENGTH = 20
-        LABEL_WIDTH = 20
-        TEXT_WEST_MARGIN = 10
-        ROUND_WIDTH = 2*HORIZONTAL_LINE_LENGTH+LABEL_WIDTH+TEXT_WEST_MARGIN
-        INITIAL_SPACING = 50
+        LABEL_WIDTH = 80
+        TEXT_MARGIN = 10
+        ROUND_WIDTH = 2 * HORIZONTAL_LINE_LENGTH + LABEL_WIDTH + 2 * TEXT_MARGIN
+        INITIAL_SPACING = 55
+        TEXT_LINE_HEIGHT = 12
+
         def draw_bracket_lines(
             x_start: float, x_end: float, y_centre: float, y_separation: float
         ) -> None:
             top_y = y_centre - y_separation / 2
-            self._canvas.create_line(x_start, top_y, x_start + HORIZONTAL_LINE_LENGTH, top_y)
+            self._canvas.create_line(
+                x_start, top_y, x_start + HORIZONTAL_LINE_LENGTH, top_y
+            )
             bottom_y = y_centre + y_separation / 2
             self._canvas.create_line(
                 x_start, bottom_y, x_start + HORIZONTAL_LINE_LENGTH, bottom_y
@@ -119,37 +124,111 @@ class KnockoutTab(AppTab):
             )
 
         def draw_race(x: float, y_centre: float, y_spacing: float, race: Race) -> None:
-            top_y = y_centre - y_spacing / 2
-            bottom_y = y_centre + y_spacing / 2
-            self._canvas.create_text(
-                x, top_y, anchor=ttkc.W, width=LABEL_WIDTH, text=race.left_seed
-            )
-            self._canvas.create_text(
-                x, bottom_y, anchor=ttkc.W, width=LABEL_WIDTH, text=race.right_seed
-            )
-            draw_bracket_lines(x + LABEL_WIDTH, x + LABEL_WIDTH + 2*HORIZONTAL_LINE_LENGTH, y_centre, y_spacing)
+            def draw_number(y, car: Car, prev_race: Race | None) -> None:
+                if car is None and prev_race.has_competitors():
+                    # Undecided, will be decided this round.
+                    # TODO: Populate with options from the previous race.
+                    current_var = tk.StringVar()
+                    values = (
+                            [""]
+                        +
+                        (
+                            [f"{prev_race.left_car.car_id}"]
+                            if prev_race.left_car is not None
+                            else []
+                        )
+                        + (
+                            [f"{prev_race.right_car.car_id}"]
+                            if prev_race.right_car is not None
+                            else []
+                        )
+                        + ["DNR"]
+                    )
+                    combobox = ttk.Combobox(
+                        self._frame, textvariable=current_var, values=values
+                    )
+                    combobox["state"] = ttkc.READONLY
+                    self._canvas.create_window(
+                        x, y, anchor=ttkc.W, width=LABEL_WIDTH, window=combobox
+                    )
+                elif prev_race is not None and not prev_race.has_competitors():
+                    # Draw a placeholder box for now.
+                    PLACEHOLDER_HEIGHT = 30
+                    self._canvas.create_rectangle(
+                        x, y-PLACEHOLDER_HEIGHT/2, x+LABEL_WIDTH, y+PLACEHOLDER_HEIGHT/2,
+                        dash=5
+                    )
+                elif car is not None:
+                    # Car is specified. Print that.
+                    self._canvas.create_text(
+                        x + LABEL_WIDTH,
+                        y - TEXT_LINE_HEIGHT / 2,
+                        anchor=ttkc.E,
+                        width=LABEL_WIDTH,
+                        text=car.car_id,
+                    )
+                    self._canvas.create_text(
+                        x + LABEL_WIDTH,
+                        y + TEXT_LINE_HEIGHT / 2,
+                        anchor=ttkc.E,
+                        width=LABEL_WIDTH,
+                        text=car.car_name,
+                        font=("", 7, "italic"),
+                    )
+
+            line_x_start = x + LABEL_WIDTH + TEXT_MARGIN
+            line_x_end = x + LABEL_WIDTH + TEXT_MARGIN + 2 * HORIZONTAL_LINE_LENGTH
+
+            def draw_normal_race() -> None:
+                top_y = y_centre - y_spacing / 2
+                bottom_y = y_centre + y_spacing / 2
+                assert not race.is_bye(), "Do not use draw_normal_race() for a bye."
+                draw_number(top_y, cast(Car, race.left_car), race.left_prev_race)
+                draw_number(bottom_y, cast(Car, race.right_car), race.right_prev_race)
+                draw_bracket_lines(
+                    line_x_start,
+                    line_x_end,
+                    y_centre,
+                    y_spacing,
+                )
+
+            def draw_bye() -> None:
+                assert race.is_bye(), "Use draw_normal_race() for non-byes."
+                draw_number(y_centre, race.bye_winner(), None)
+                self._canvas.create_line(line_x_start, y_centre, line_x_end, y_centre)
+
+            if race.is_bye():
+                draw_bye()
+            else:
+                draw_normal_race()
 
         def draw_round(
             x: float, y_centre: float, y_spacing: float, round: List[Race]
         ) -> None:
             for i, race in enumerate(round):
                 race_y_centre = (i + 0.5 - len(round) / 2) * y_spacing + y_centre
-                draw_race(x, race_y_centre, y_spacing/2, race)
+                draw_race(x, race_y_centre, y_spacing / 2, race)
 
         def draw_bracket(
-                x:float, y_centre: float, y_spacing_initial: float, rounds: List[List[Race]]
+            x: float,
+            y_centre: float,
+            y_spacing_initial: float,
+            rounds: List[List[Race]],
         ) -> None:
             for i, round in enumerate(rounds):
-                draw_round(x+i*ROUND_WIDTH, y_centre, y_spacing_initial*(2**i), round)
-        # draw_bracket(10, 200, self._canvas.winfo_reqheight() / 3, 100)
-        # draw_race(10, 300, 150, event.grand_final)
-        # draw_round(10, self.height/2, 50, event.winners_bracket[0])
-        draw_bracket(10, self.height/2, INITIAL_SPACING, event.winners_bracket)
+                draw_round(
+                    x + i * ROUND_WIDTH, y_centre, y_spacing_initial * (2**i), round
+                )
 
-    def export(self, output:str) -> None:
+        draw_bracket(10, self.height / 3, INITIAL_SPACING, event.winners_bracket)
+        # TODO: Sort out spacing between winner's and loser's brackets.
+        # TODO: Handle drawing repecharge rounds.
+        # draw_bracket(10, 2*self.height / 3, INITIAL_SPACING, event.losers_bracket)
+    def export(self, output: str) -> None:
         """Exports the canvas as postscript to a file."""
         self._canvas.update()
         self._canvas.postscript(file=output)
+
 
 class Gui:
     def __init__(self) -> None:

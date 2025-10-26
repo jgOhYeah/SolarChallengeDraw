@@ -32,15 +32,20 @@ class Podium:
 
 class Race:
     """Class that represents a knockout race."""
+
     def __init__(
         self,
         left_seed: int,
         right_seed: int,
+        left_prev_race: Race | None = None,
+        right_prev_race: Race | None = None,
         winner_next_race: Race | Podium | None = None,
         loser_next_race: Race | Podium | None = None,
     ):
         self.left_seed = left_seed
         self.right_seed = right_seed
+        self.left_prev_race = left_prev_race
+        self.right_prev_race = right_prev_race
         self.winner_next_race: Race | Podium | None = winner_next_race
         self.loser_next_race: Race | Podium | None = loser_next_race
         self.left_car: Car | None = None
@@ -52,6 +57,28 @@ class Race:
     def theoretical_loser(self) -> int:
         return max(self.left_seed, self.right_seed)
 
+    def has_competitors(self) -> bool:
+        """Returns true if there is at least one car specified for the race.
+
+        Returns:
+            bool: If at least one can is specified.
+        """
+        return self.left_car is not None or self.right_car is not None
+
+    def is_bye(self) -> bool:
+        """Checks if there is only a single competitor specified, makng the race a bye.
+
+        Returns:
+            bool: True when the race is a bye.
+        """
+        return self.has_competitors() and (
+            self.left_car is None or self.right_car is None
+        )
+
+    def bye_winner(self) -> Car:
+        assert self.is_bye(), "This race must be a bye to call this method."
+        return cast(Car, self.left_car if self.left_car is not None else self.right_car)
+
     def __repr__(self) -> str:
         def car_none_str(car_none: Car | None):
             """Calls repr if this is a car, puts a placeholder in otherwise."""
@@ -61,6 +88,7 @@ class Race:
                 return repr(car_none)
 
         return f"({self.left_seed:>2d} {car_none_str(self.left_car)}, {self.right_seed:>2d} {car_none_str(self.right_car)})"
+
 
 def add_round(next_round: List[Race]) -> List[Race]:
     """Adds a normal round where the number of competitors are halved."""
@@ -75,25 +103,26 @@ def add_round(next_round: List[Race]) -> List[Race]:
 
     for next_round_race in next_round:
         high_seed = next_round_race.theoretical_winner()
-        races.append(
-            Race(
-                left_seed=high_seed,
-                right_seed=seed_pair(high_seed),
-                winner_next_race=next_round_race,
-            )
+        left_race = Race(
+            left_seed=high_seed,
+            right_seed=seed_pair(high_seed),
+            winner_next_race=next_round_race,
         )
+        races.append(left_race)
+        next_round_race.left_prev_race = left_race
         low_seed = next_round_race.theoretical_loser()
-        races.append(
-            Race(
-                left_seed=low_seed,
-                right_seed=seed_pair(low_seed),
-                winner_next_race=next_round_race,
-            )
+        right_race = Race(
+            left_seed=low_seed,
+            right_seed=seed_pair(low_seed),
+            winner_next_race=next_round_race,
         )
+        races.append(right_race)
+        next_round_race.right_prev_race = right_race
 
     return races
 
-def create_empty_draw(competitors:int) -> List[List[Race]]:
+
+def create_empty_draw(competitors: int) -> List[List[Race]]:
     """Creates an empty single elimination draw with optimal seeding."""
     rounds = int(np.ceil(np.log2(competitors)))
     grand_final = Race(1, 2, None)
@@ -106,9 +135,11 @@ def create_empty_draw(competitors:int) -> List[List[Race]]:
     event = list(reversed(event))
     return event
 
-def print_event(event:Iterable[List[Race]]) -> None:
+
+def print_event(event: Iterable[List[Race]]) -> None:
     for round_num, r in enumerate(event):
         print(f"{round_num:5}: {r}")
+
 
 def add_first_losers(winning_round1: List[Race]) -> List[Race]:
     """Generates the first round of the loser's bracket."""
@@ -117,6 +148,8 @@ def add_first_losers(winning_round1: List[Race]) -> List[Race]:
         race = Race(
             left_seed=winning_round1[i].theoretical_loser(),
             right_seed=winning_round1[i + 1].theoretical_loser(),
+            left_prev_race=winning_round1[i],
+            right_prev_race=winning_round1[i + 1],
         )
         winning_round1[i].loser_next_race = race
         winning_round1[i + 1].loser_next_race = race
@@ -147,6 +180,8 @@ def add_repecharge(
         race = Race(
             left_seed=winner_race.theoretical_loser(),
             right_seed=loser_race.theoretical_winner(),
+            left_prev_race=winner_race,
+            right_prev_race=loser_race,
         )
         winner_race.loser_next_race = race
         loser_race.winner_next_race = race
@@ -163,6 +198,8 @@ def forward_knockout(prev_round: List[Race]) -> List[Race]:
         race = Race(
             left_seed=prev_round[i].theoretical_winner(),
             right_seed=prev_round[i + 1].theoretical_winner(),
+            left_prev_race=prev_round[i],
+            right_prev_race=prev_round[i + 1],
         )
         prev_round[i].winner_next_race = race
         prev_round[i + 1].winner_next_race = race
@@ -185,58 +222,78 @@ def create_loosers_draw(winners: List[List[Race]]) -> List[List[Race]]:
         # Round with losers other than the initial winners' round, add 2 losers' rounds.
         # Decrease in number.
         losers.append(forward_knockout(losers[-1]))
-        
+
         # Add the repecharge.
         reverse_winners = bool(i & 0x1)
-        losers.append(
-            add_repecharge(winners[i], losers[-1], reverse_winners)
-        )
+        losers.append(add_repecharge(winners[i], losers[-1], reverse_winners))
 
     return losers
 
-def assign_cars(cars:List[Car], first_round:List[Race]) -> None:
+
+def assign_cars(cars: List[Car], first_round: List[Race]) -> None:
     """Assigns cars to the first round of the draw."""
-    sorted_cars: List[Car|None] = sorted(cars, key=lambda c: cast(Car,c).points, reverse=False) # Set reverse to True to reward higher rather than lower points.
-    byes = 2*len(first_round) - len(sorted_cars)
+    sorted_cars: List[Car | None] = sorted(
+        cars, key=lambda c: cast(Car, c).points, reverse=False
+    )  # Set reverse to True to reward higher rather than lower points.
+    byes = 2 * len(first_round) - len(sorted_cars)
     sorted_cars.extend([None] * byes)
-    assert len(sorted_cars) == 2*len(first_round), "We should have introduced enough byes to obtain the required number of participents, but something went wrong."
+    assert len(sorted_cars) == 2 * len(
+        first_round
+    ), "We should have introduced enough byes to obtain the required number of participents, but something went wrong."
 
     for race in first_round:
-        race.left_car = sorted_cars[race.left_seed-1]
-        race.right_car = sorted_cars[race.right_seed-1]
+        race.left_car = sorted_cars[race.left_seed - 1]
+        race.right_car = sorted_cars[race.right_seed - 1]
+
 
 def add_grand_final(winners_final: Race, losers_final: Race) -> Race:
     """Adds a grand final and sets the podium results from winning and loosing."""
-    assert winners_final.loser_next_race is losers_final, "The loser of the winners' final should be a contestent in the losers' final."
+    assert (
+        winners_final.loser_next_race is losers_final
+    ), "The loser of the winners' final should be a contestent in the losers' final."
     grand_final = Race(
         winners_final.theoretical_winner(),
         losers_final.theoretical_winner(),
         winner_next_race=Podium(1),
-        loser_next_race=Podium(2)
+        loser_next_race=Podium(2),
     )
 
     # Link to the grand final.
-    assert winners_final.winner_next_race is None, "Should not have a grand final for the winners already."
+    assert (
+        winners_final.winner_next_race is None
+    ), "Should not have a grand final for the winners already."
     winners_final.winner_next_race = grand_final
-    assert losers_final.winner_next_race is None, "Should not have a grand final for the losers already."
+    assert (
+        losers_final.winner_next_race is None
+    ), "Should not have a grand final for the losers already."
     losers_final.winner_next_race = grand_final
 
     # Set the 3rd place podium.
-    assert losers_final.loser_next_race is None, "Loser should be removed and not have a next race."
+    assert (
+        losers_final.loser_next_race is None
+    ), "Loser should be removed and not have a next race."
     losers_final.loser_next_race = Podium(3)
 
     return grand_final
 
+
 class KnockoutEvent:
     """A class that contains all races for the knockout event."""
+
     def __init__(self, cars: List[Car]) -> None:
         self.winners_bracket = create_empty_draw(len(cars))
         assign_cars(cars, self.winners_bracket[0])
         self.losers_bracket = create_loosers_draw(self.winners_bracket)
 
-        assert len(self.winners_bracket[-1]) == 1, "Should only be one race in the last round."
-        assert len(self.losers_bracket[-1]) == 1, "Should only be one race in the last round."
-        self.grand_final = add_grand_final(self.winners_bracket[-1][0], self.losers_bracket[-1][0])
+        assert (
+            len(self.winners_bracket[-1]) == 1
+        ), "Should only be one race in the last round."
+        assert (
+            len(self.losers_bracket[-1]) == 1
+        ), "Should only be one race in the last round."
+        self.grand_final = add_grand_final(
+            self.winners_bracket[-1][0], self.losers_bracket[-1][0]
+        )
 
     def print(self) -> None:
         print("Winners:")

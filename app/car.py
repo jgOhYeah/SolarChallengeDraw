@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import List
+import numpy as np
 import pandas as pd
 
 
@@ -25,7 +26,7 @@ class Car:
     points: int = 0  # Lower is better.
 
     def __repr__(self) -> str:
-        return f"<{self.car_id:>3d}, {self.points:>2d}>"
+        return f"<{self.car_id:>3d}, {self.points:>2.0f}>"
 
 
 def load_cars(csv_filename: str) -> List[Car]:
@@ -42,6 +43,7 @@ def load_cars(csv_filename: str) -> List[Car]:
     df = pd.read_csv(csv_filename)
     cars: List[Car] = []
     for _, row in df.iterrows():
+        print(row[CarTableFields.POINTS], pd.isna(row[CarTableFields.POINTS]))
         cars.append(
             Car(
                 car_id=row[CarTableFields.CAR_ID],
@@ -50,7 +52,7 @@ def load_cars(csv_filename: str) -> List[Car]:
                 car_scruitineered=row[CarTableFields.SCRUITINEERED],
                 present_round_robin=row[CarTableFields.PRESENT_ROUND_ROBIN],
                 present_knockout=row[CarTableFields.PRESENT_KNOCKOUT],
-                points=row[CarTableFields.POINTS],
+                points=row[CarTableFields.POINTS] if not np.isnan(row[CarTableFields.POINTS]) else 0
             )
         )
 

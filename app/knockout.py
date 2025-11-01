@@ -280,11 +280,11 @@ def add_grand_final(winners_final: Race, losers_final: Race) -> Race:
 class KnockoutEvent:
     """A class that contains all races for the knockout event."""
 
-    def __init__(self, cars: List[Car]) -> None:
+    def __init__(self, cars: List[Car], name:str) -> None:
         self.winners_bracket = create_empty_draw(len(cars))
         assign_cars(cars, self.winners_bracket[0])
         self.losers_bracket = create_loosers_draw(self.winners_bracket)
-
+        self.name = name
         assert (
             len(self.winners_bracket[-1]) == 1
         ), "Should only be one race in the last round."

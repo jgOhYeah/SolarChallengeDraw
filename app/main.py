@@ -39,7 +39,7 @@ def get_arguments() -> argparse.Namespace:
 if __name__ == "__main__":
     args = get_arguments()
     cars = car.load_cars(args.cars)
-    knockout_event = knockout.KnockoutEvent(cars)
+    knockout_event = knockout.KnockoutEvent(cars, "Test event")
     knockout_event.print()
     gui_ui = gui.Gui()
     gui_ui.knockout.draw(knockout_event)

@@ -2,7 +2,8 @@
 Written by Jotham Gates, 20/10/2025"""
 
 import tkinter as tk
-from typing import List, Self, cast
+from typing import List, Self, Tuple, cast
+import numpy as np
 import ttkbootstrap as ttk
 import ttkbootstrap.constants as ttkc
 import ttkbootstrap.tableview as tableview
@@ -83,9 +84,9 @@ class KnockoutTab(AppTab):
         super().__init__(root, "Knockout")
 
         # Canvas to draw the draw on.
-        SCALE = 7
-        self.width = 210 * SCALE
-        self.height = 297 * SCALE
+        SCALE = 6
+        self.width = 297 * SCALE
+        self.height = 210 * SCALE
         self._canvas = ttk.Canvas(self._frame, width=self.width, height=self.height)
         self._canvas.pack(fill=ttkc.BOTH, expand=True)
 
@@ -97,10 +98,18 @@ class KnockoutTab(AppTab):
         """
         HORIZONTAL_LINE_LENGTH = 20
         LABEL_WIDTH = 80
+        LABEL_HEIGHT = 20
         TEXT_MARGIN = 10
         ROUND_WIDTH = 2 * HORIZONTAL_LINE_LENGTH + LABEL_WIDTH + 2 * TEXT_MARGIN
         INITIAL_SPACING = 55
         TEXT_LINE_HEIGHT = 12
+        FONT = "Arial"
+        FONT_SMALL_SIZE = 7
+        FONT_NORMAL_SIZE = 10
+        FONT_TITLE_SIZE = 15
+        FONT_SUPTITLE_SIZE = 30
+        LEFT_MARGIN = 10
+        TOP_MARGIN = 10
 
         def draw_bracket_lines(
             x_start: float, x_end: float, y_centre: float, y_separation: float
@@ -130,9 +139,8 @@ class KnockoutTab(AppTab):
                     # TODO: Populate with options from the previous race.
                     current_var = tk.StringVar()
                     values = (
-                            [""]
-                        +
-                        (
+                        [""]
+                        + (
                             [f"{prev_race.left_car.car_id}"]
                             if prev_race.left_car is not None
                             else []
@@ -149,14 +157,16 @@ class KnockoutTab(AppTab):
                     )
                     combobox["state"] = ttkc.READONLY
                     self._canvas.create_window(
-                        x, y, anchor=ttkc.W, width=LABEL_WIDTH, window=combobox
+                        x, y, anchor=ttkc.W, width=LABEL_WIDTH, height=LABEL_HEIGHT, window=combobox
                     )
                 elif prev_race is not None and not prev_race.has_competitors():
                     # Draw a placeholder box for now.
-                    PLACEHOLDER_HEIGHT = 30
                     self._canvas.create_rectangle(
-                        x, y-PLACEHOLDER_HEIGHT/2, x+LABEL_WIDTH, y+PLACEHOLDER_HEIGHT/2,
-                        dash=5
+                        x,
+                        y - LABEL_HEIGHT / 2,
+                        x + LABEL_WIDTH,
+                        y + LABEL_HEIGHT / 2,
+                        dash=5,
                     )
                 elif car is not None:
                     # Car is specified. Print that.
@@ -166,6 +176,7 @@ class KnockoutTab(AppTab):
                         anchor=ttkc.E,
                         width=LABEL_WIDTH,
                         text=car.car_id,
+                        font=(FONT, FONT_NORMAL_SIZE)
                     )
                     self._canvas.create_text(
                         x + LABEL_WIDTH,
@@ -173,7 +184,7 @@ class KnockoutTab(AppTab):
                         anchor=ttkc.E,
                         width=LABEL_WIDTH,
                         text=car.car_name,
-                        font=("", 7, "italic"),
+                        font=(FONT, FONT_SMALL_SIZE, "italic"),
                     )
 
             line_x_start = x + LABEL_WIDTH + TEXT_MARGIN
@@ -220,10 +231,48 @@ class KnockoutTab(AppTab):
                     x + i * ROUND_WIDTH, y_centre, y_spacing_initial * (2**i), round
                 )
 
-        draw_bracket(10, self.height / 3, INITIAL_SPACING, event.winners_bracket)
+        def draw_losers_bracket(
+            x: float,
+            y_centre: float,
+            y_spacing_initial: float,
+            rounds: List[List[Race]],
+        ) -> Tuple[float, float]:
+            """Draws the losers bracket.
+
+            Args:
+                x (float): The initial x position for the left hand label.
+                y_centre (float): The initial centre line in the first round.
+                y_spacing_initial (float): The spacing in the first round.
+                rounds (List[List[Race]]): The rounds to plot.
+
+            Returns:
+                Tuple[float, float]: The x coordinate at the end of the bracket and the centreline of the right hand side.
+            """
+            self._canvas.create_line(0, y_centre, self.width, y_centre, fill="red")
+            offset = 0
+            for i, round in enumerate(rounds):
+                spacing = y_spacing_initial * (2 ** (i // 2))
+                draw_round(x + i * ROUND_WIDTH, y_centre - offset, spacing, round)
+                if i & 0x01 == 0x00:
+                    offset += spacing/4
+
+            return x + len(rounds) * ROUND_WIDTH, offset
+
+        _, _, _, suptitle_bottom = self._canvas.bbox(self._canvas.create_text(LEFT_MARGIN, TOP_MARGIN, text=event.name, font=(FONT, FONT_SUPTITLE_SIZE), anchor=ttkc.NW))
+        _, _, _, winners_title_bottom = self._canvas.bbox(self._canvas.create_text(LEFT_MARGIN, suptitle_bottom + TEXT_MARGIN, text="Winner's bracket", font=(FONT, FONT_TITLE_SIZE), anchor=ttkc.NW))
+        winners_height = (len(event.winners_bracket[0])-1)*INITIAL_SPACING
+        winners_centreline = winners_title_bottom + TEXT_MARGIN + winners_height/2 + LABEL_HEIGHT/2
+        draw_bracket(LEFT_MARGIN, winners_centreline, INITIAL_SPACING, event.winners_bracket)
         # TODO: Sort out spacing between winner's and loser's brackets.
         # TODO: Handle drawing repecharge rounds.
-        # draw_bracket(10, 2*self.height / 3, INITIAL_SPACING, event.losers_bracket)
+        winners_bottom = winners_centreline + winners_height/2 + LABEL_HEIGHT
+        _, _, _, losers_title_bottom = self._canvas.bbox(self._canvas.create_text(LEFT_MARGIN, winners_bottom + TEXT_MARGIN, text="Loser's bracket", font=(FONT, FONT_TITLE_SIZE), anchor=ttkc.NW))
+        losers_height = (len(event.losers_bracket[0])-1)*INITIAL_SPACING
+        losers_centreline = losers_title_bottom + TEXT_MARGIN + losers_height / 2 + LABEL_HEIGHT/2
+        draw_losers_bracket(
+            LEFT_MARGIN, losers_centreline, INITIAL_SPACING, event.losers_bracket
+        )
+
     def export(self, output: str) -> None:
         """Exports the canvas as postscript to a file."""
         self._canvas.update()
@@ -243,3 +292,4 @@ class Gui:
 
     def run(self) -> None:
         self._root.mainloop()
+        # pass

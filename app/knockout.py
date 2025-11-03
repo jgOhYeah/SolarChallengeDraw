@@ -254,6 +254,8 @@ def add_grand_final(winners_final: Race, losers_final: Race) -> Race:
     grand_final = Race(
         winners_final.theoretical_winner(),
         losers_final.theoretical_winner(),
+        left_prev_race=winners_final,
+        right_prev_race=losers_final,
         winner_next_race=Podium(1),
         loser_next_race=Podium(2),
     )

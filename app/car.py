@@ -43,7 +43,6 @@ def load_cars(csv_filename: str) -> List[Car]:
     df = pd.read_csv(csv_filename)
     cars: List[Car] = []
     for _, row in df.iterrows():
-        print(row[CarTableFields.POINTS], pd.isna(row[CarTableFields.POINTS]))
         cars.append(
             Car(
                 car_id=row[CarTableFields.CAR_ID],

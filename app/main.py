@@ -43,5 +43,5 @@ if __name__ == "__main__":
     knockout_event.print()
     gui_ui = gui.Gui()
     gui_ui.knockout.draw(knockout_event)
-    gui_ui.knockout.export("test.ps")
+    gui_ui.knockout.export("test.ps", generate_pdf=True)
     gui_ui.run()

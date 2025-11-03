@@ -259,20 +259,25 @@ class KnockoutTab(AppTab):
                     dash=5,
                 )
 
-        def draw_race(x: float, y_centre: float, y_spacing: float, race: Race) -> float:
+        def draw_race(
+            x: float, y_centre: float, y_spacing: float, columns_wide: int, race: Race
+        ) -> float:
             """Draws a race.
 
             Args:
                 x (float): The x location of the left side of the race.
                 y_centre (float): The centreline of the race.
                 y_spacing (float): The spacing between the inputs of the race.
+                columns_wide (int): The number of columns wide to made the bracket.
                 race (Race): The race to draw.
 
             Returns:
                 float: The x coordinate of the right side of the race.
             """
             line_x_start = x + LABEL_WIDTH + TEXT_MARGIN
-            line_x_end = x + LABEL_WIDTH + TEXT_MARGIN + 2 * HORIZONTAL_LINE_LENGTH
+            line_x_end = x + columns_wide * (
+                LABEL_WIDTH + 2 * TEXT_MARGIN + 2 * HORIZONTAL_LINE_LENGTH
+            )
 
             def draw_race_number(
                 anchor: Literal["nw", "n", "ne", "w", "center", "e", "sw", "s", "se"],
@@ -297,7 +302,7 @@ class KnockoutTab(AppTab):
                 )
                 draw_bracket_lines(
                     line_x_start,
-                    line_x_end,
+                    line_x_end - TEXT_MARGIN,
                     y_centre,
                     y_spacing,
                 )
@@ -319,21 +324,38 @@ class KnockoutTab(AppTab):
             return line_x_end
 
         def draw_round(
-            x: float, y_centre: float, y_spacing: float, round: List[Race]
-        ) -> None:
+            x: float,
+            y_centre: float,
+            y_spacing: float,
+            round: List[Race],
+            columns_wide: int,
+        ) -> float:
             for i, race in enumerate(round):
                 race_y_centre = (i + 0.5 - len(round) / 2) * y_spacing + y_centre
-                draw_race(x, race_y_centre, y_spacing / 2, race)
+                x_end = draw_race(x, race_y_centre, y_spacing / 2, columns_wide, race)
 
-        def draw_bracket(
+            return x_end
+
+        def draw_winners_bracket(
             x: float,
             y_centre: float,
             y_spacing_initial: float,
             rounds: List[List[Race]],
         ) -> Tuple[float, float]:
+            next_x = x
             for i, round in enumerate(rounds):
-                draw_round(
-                    x + i * ROUND_WIDTH, y_centre, y_spacing_initial * (2**i), round
+                if i == 0 or i == len(rounds) - 1:
+                    # Single column wide for first and last rounds.
+                    cols_wide = 1
+                else:
+                    # Double column wide to allow the losers' bracket to keep up.
+                    cols_wide = 2
+                next_x = draw_round(
+                    next_x,
+                    y_centre,
+                    y_spacing_initial * (2**i),
+                    round,
+                    columns_wide=cols_wide,
                 )
 
             return x + len(rounds) * ROUND_WIDTH, y_centre
@@ -355,10 +377,17 @@ class KnockoutTab(AppTab):
             Returns:
                 Tuple[float, float]: The x coordinate at the end of the bracket and the centreline of the right hand side.
             """
+            # TODO: Handle byes in the losers' round.
             offset = 0
             for i, round in enumerate(rounds):
                 spacing = y_spacing_initial * (2 ** (i // 2))
-                draw_round(x + i * ROUND_WIDTH, y_centre - offset, spacing, round)
+                draw_round(
+                    x + i * ROUND_WIDTH,
+                    y_centre - offset,
+                    spacing,
+                    round,
+                    columns_wide=1,
+                )
                 if i & 0x01 == 0x00:
                     # Reduction (non-repecharge) round.
                     offset += spacing / 4
@@ -383,30 +412,13 @@ class KnockoutTab(AppTab):
                 max(winners_end[0], losers_end[0]),
                 gf_y_centre,
                 losers_end[1] - winners_end[1],
+                1,
                 event.grand_final,
             )
 
-            # Extend the lines from the previous race if needed.
-            if winners_end[0] < losers_end[0]:
-                # We need to extend the winners' line (the usual?)
-                self._canvas.create_line(
-                    winners_end[0] - TEXT_MARGIN,
-                    winners_end[1],
-                    losers_end[0] - TEXT_MARGIN,
-                    winners_end[1],
-                )
-            elif winners_end[0] > losers_end[0]:
-                # We need to extend the losers' line (unheard of?)
-                self._canvas.create_line(
-                    losers_end[0] - TEXT_MARGIN,
-                    losers_end[1],
-                    winners_end[0] - TEXT_MARGIN,
-                    losers_end[1],
-                )
-
             # Add a results box.
             draw_number(
-                right_side + TEXT_MARGIN,
+                right_side,
                 gf_y_centre,
                 None,
                 prev_race=event.grand_final,
@@ -440,7 +452,7 @@ class KnockoutTab(AppTab):
         winners_centreline = (
             winners_title_bottom + TEXT_MARGIN + winners_height / 2 + LABEL_HEIGHT / 2
         )
-        win_end = draw_bracket(
+        win_end = draw_winners_bracket(
             LEFT_MARGIN, winners_centreline, INITIAL_SPACING, event.winners_bracket
         )
 

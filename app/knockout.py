@@ -3,7 +3,7 @@
 from __future__ import annotations
 from abc import ABC
 from dataclasses import dataclass
-from enum import Enum, auto
+from enum import StrEnum
 from typing import Iterable, List, cast
 import numpy as np
 from car import Car
@@ -50,6 +50,7 @@ class Race:
         self.loser_next_race: Race | Podium | None = loser_next_race
         self.left_car: Car | None = None
         self.right_car: Car | None = None
+        self.race_number: int = 0
 
     def theoretical_winner(self) -> int:
         return min(self.left_seed, self.right_seed)
@@ -278,6 +279,42 @@ def add_grand_final(winners_final: Race, losers_final: Race) -> Race:
 
     return grand_final
 
+def number_races_in_round(races: List[Race], start:int) -> int:
+    """Adds the race number to each race in a round.
+
+    Args:
+        races (List[Race]): The races to annotate.
+        start (int): The number to assign to the first race.
+
+    Returns:
+        int: The number after the last race.
+    """
+    for i, race in enumerate(races):
+        race.race_number = i+start
+    
+    return len(races) + start
+
+class RoundType(StrEnum):
+    """Enumerator that represents the type of a round.
+    """
+    WINNERS = "P" # P for primary knockout.
+    LOSERS = "SC" # SC for secondary knockout.
+    GRAND_FINAL = "Grand final"
+
+@dataclass
+class RoundId:
+    """Class that identifies a round."""
+    round_type: RoundType
+    round_index: int | None = None
+
+    def __repr__(self) -> str:
+        if self.round_index is not None:
+            return f"{self.round_type.value}{self.round_index+1}"
+        else:
+            return self.round_type.value
+    
+    def __str__(self) -> str:
+        return repr(self)
 
 class KnockoutEvent:
     """A class that contains all races for the knockout event."""
@@ -296,6 +333,70 @@ class KnockoutEvent:
         self.grand_final = add_grand_final(
             self.winners_bracket[-1][0], self.losers_bracket[-1][0]
         )
+        self._number_races()
+
+    def calculate_play_order(self) -> List[RoundId]:
+        """Determines the order that the event should be played.
+        An example ordering for a 32 car draw is:
+        P1, SC1, P2, SC2, SC3, P3, SC4, SC5, P4, SC6, SC7, P5, SC8, GF
+
+        This ordering aims to keep the winners and loosers brackets somewhat in
+        sync as there is approximately double the losers' rounds than winners'.
+
+        Returns:
+            List[RoundId]: The play order of the event.
+        """
+        # Initial winners and losers rounds.
+        play_order: List[RoundId] = [
+            RoundId(RoundType.WINNERS, 0),
+            RoundId(RoundType.LOSERS, 0)
+        ]
+
+        # Patterns of 1 winners' round followed by 2 losers' rounds to keep them somewhat in sync.
+        for winners_index in range(1, len(self.winners_bracket)):
+            play_order.append(RoundId(RoundType.WINNERS, winners_index))
+            play_order.append(RoundId(RoundType.LOSERS, 2*winners_index-1))
+            if len(self.losers_bracket) > 2*winners_index:
+                # The last pattern won't have 2 losers rounds back to back.
+                play_order.append(RoundId(RoundType.LOSERS, 2*winners_index))
+        
+        # Add the grand final and check the process worked correctly.
+        play_order.append(RoundId(RoundType.GRAND_FINAL))
+        assert len(play_order) == len(self.winners_bracket) + len(self.losers_bracket) + 1, "Incorrect number of rounds in the play order."
+        return play_order
+
+    def _number_races(self) -> None:
+        # Assigns a number to each race, based on the play order.
+        play_order = self.calculate_play_order()
+        start_number = 1
+        for round_id in play_order:
+            start_number = number_races_in_round(self.get_round(round_id), start_number)
+    
+    def get_round(self, id:RoundId) -> List[Race]:
+        """Gets the round corresponding to a given RoundId object.
+
+        Args:
+            id (RoundId): The id to search for.
+
+        Raises:
+            KeyError: If the round could not be found.
+        Returns:
+            List[Race]: The corresponding round.
+        """
+        def check_length(bracket: List[List[Race]]) -> List[Race]:
+            if id.round_index is None or id.round_index >= len(bracket):
+                raise KeyError(f"Round {str(id)} could not be found in this event.")
+            else:
+                return bracket[id.round_index]
+        
+        match id.round_type:
+            case RoundType.WINNERS:
+                return check_length(self.winners_bracket)
+            case RoundType.LOSERS:
+                return check_length(self.losers_bracket)
+            
+            case RoundType.GRAND_FINAL:
+                return [self.grand_final]
 
     def print(self) -> None:
         print("Winners:")
@@ -306,3 +407,5 @@ class KnockoutEvent:
         print()
         print("Grand final")
         print(repr(self.grand_final))
+        print("Event order:")
+        print(self.calculate_play_order())

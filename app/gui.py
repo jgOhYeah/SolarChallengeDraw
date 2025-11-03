@@ -3,7 +3,7 @@ Written by Jotham Gates, 20/10/2025"""
 
 import subprocess
 import tkinter as tk
-from typing import Callable, List, Self, Tuple, cast
+from typing import Callable, List, Literal, Tuple
 import numpy as np
 import ttkbootstrap as ttk
 import ttkbootstrap.constants as ttkc
@@ -85,10 +85,10 @@ class KnockoutTab(AppTab):
         super().__init__(root, "Knockout")
 
         # Canvas to draw the draw on.
-        SCALE = 5
-        self.width = 297 * SCALE
-        self.height = 210 * SCALE
-        self._canvas = ttk.Canvas(self._frame, width=self.width, height=self.height)
+        SCALE = 1
+        self._width = 297 * SCALE
+        self._height = 210 * SCALE
+        self._canvas = ttk.Canvas(self._frame, width=self._width, height=self._height)
 
         # Setup pan and zoom
         # Based on https://stackoverflow.com/a/60149696
@@ -111,6 +111,13 @@ class KnockoutTab(AppTab):
 
             return do_zoom
 
+        # self._canvas.bind(
+        #     "<MouseWheel>", zoom_canvas(lambda e: 1.001**e.delta)
+        # )  # Windows zoom.
+        # self._canvas.bind("<4>", zoom_canvas(lambda _: 1.1))  # Unix zoom in.
+        # self._canvas.bind("<5>", zoom_canvas(lambda _: 0.9))  # Unix zoom out.
+
+        # Scrolling
         self._canvas.bind(
             "<ButtonPress-1>", lambda event: self._canvas.scan_mark(event.x, event.y)
         )
@@ -118,15 +125,29 @@ class KnockoutTab(AppTab):
             "<B1-Motion>",
             lambda event: self._canvas.scan_dragto(event.x, event.y, gain=1),
         )
-        self._canvas.bind(
-            "<MouseWheel>", zoom_canvas(lambda e: 1.001**e.delta)
-        )  # Windows zoom.
-        self._canvas.bind("<4>", zoom_canvas(lambda _: 1.1))  # Unix zoom in.
-        self._canvas.bind("<5>", zoom_canvas(lambda _: 0.9))  # Unix zoom out.
 
-        self._canvas.pack(fill=ttkc.BOTH, expand=True)
+        # Scroll bars.
+        # Based on https://stackoverflow.com/a/68723221
+        self._x_scroll_bar = tk.Scrollbar(
+            self._frame, orient="horizontal", command=self._canvas.xview
+        )
+        self._y_scroll_bar = tk.Scrollbar(
+            self._frame, orient="vertical", command=self._canvas.yview
+        )
+        self._canvas.configure(
+            yscrollcommand=self._y_scroll_bar.set, xscrollcommand=self._x_scroll_bar.set
+        )
+        self._canvas.configure(scrollregion=(0, 0, self._width, self._height))
 
-    def draw(self, event: KnockoutEvent) -> None:
+        self._x_scroll_bar.grid(row=1, column=0, sticky="ew")
+        self._y_scroll_bar.grid(row=0, column=1, sticky="ns")
+        self._canvas.grid(row=0, column=0, sticky="nsew")
+        self._frame.grid_rowconfigure(0, weight=1)
+        self._frame.grid_columnconfigure(0, weight=1)
+
+    def draw(
+        self, event: KnockoutEvent, show_seed: bool = True, interactive: bool = True
+    ) -> None:
         """Draws the knockout event on the canvas.
 
         Args:
@@ -136,6 +157,7 @@ class KnockoutTab(AppTab):
         LABEL_WIDTH = 80
         LABEL_HEIGHT = 20
         TEXT_MARGIN = 10
+        SHORT_TEXT_MARGIN = TEXT_MARGIN / 2
         ROUND_WIDTH = 2 * HORIZONTAL_LINE_LENGTH + LABEL_WIDTH + 2 * TEXT_MARGIN
         INITIAL_SPACING = 55
         TEXT_LINE_HEIGHT = 12
@@ -145,7 +167,9 @@ class KnockoutTab(AppTab):
         FONT_TITLE_SIZE = 15
         FONT_SUPTITLE_SIZE = 30
         LEFT_MARGIN = 10
-        TOP_MARGIN = 10
+        TOP_MARGIN = LEFT_MARGIN
+        RIGHT_MARGIN = LEFT_MARGIN
+        BOTTOM_MARGIN = TOP_MARGIN
 
         def draw_bracket_lines(
             x_start: float, x_end: float, y_centre: float, y_separation: float
@@ -169,10 +193,35 @@ class KnockoutTab(AppTab):
             )
 
         def draw_number(
-            x: float, y: float, car: Car | None, prev_race: Race | None
+            x: float, y: float, car: Car | None, prev_race: Race | None, seed: int
         ) -> None:
-            if car is None and prev_race is not None and prev_race.has_competitors():
-                # Undecided, will be decided this round.
+            # Draw the seed.
+            if show_seed:
+                self._canvas.create_text(
+                    x + SHORT_TEXT_MARGIN, y, anchor=ttkc.W, text=seed, fill="red"
+                )
+
+            if car is not None:
+                # Car is specified. Print that.
+                self._canvas.create_text(
+                    x + LABEL_WIDTH,
+                    y - TEXT_LINE_HEIGHT / 2,
+                    anchor=ttkc.E,
+                    width=LABEL_WIDTH,
+                    text=car.car_id,
+                    font=(FONT, FONT_NORMAL_SIZE),
+                )
+                self._canvas.create_text(
+                    x + LABEL_WIDTH,
+                    y + TEXT_LINE_HEIGHT / 2,
+                    anchor=ttkc.E,
+                    width=LABEL_WIDTH,
+                    text=car.car_name,
+                    font=(FONT, FONT_SMALL_SIZE, "italic"),
+                )
+            elif interactive and prev_race is not None and prev_race.has_competitors():
+                # There are choices for which car should go in this spot and we are in interactive mode.
+                # Display a drop down menu.
                 current_var = tk.StringVar()
                 values = (
                     [""]
@@ -200,32 +249,14 @@ class KnockoutTab(AppTab):
                     height=LABEL_HEIGHT,
                     window=combobox,
                 )
-            elif prev_race is not None and not prev_race.has_competitors():
-                # Draw a placeholder box for now.
+            else:
+                # Undecided, show a placeholder box instead.
                 self._canvas.create_rectangle(
                     x,
                     y - LABEL_HEIGHT / 2,
                     x + LABEL_WIDTH,
                     y + LABEL_HEIGHT / 2,
                     dash=5,
-                )
-            elif car is not None:
-                # Car is specified. Print that.
-                self._canvas.create_text(
-                    x + LABEL_WIDTH,
-                    y - TEXT_LINE_HEIGHT / 2,
-                    anchor=ttkc.E,
-                    width=LABEL_WIDTH,
-                    text=car.car_id,
-                    font=(FONT, FONT_NORMAL_SIZE),
-                )
-                self._canvas.create_text(
-                    x + LABEL_WIDTH,
-                    y + TEXT_LINE_HEIGHT / 2,
-                    anchor=ttkc.E,
-                    width=LABEL_WIDTH,
-                    text=car.car_name,
-                    font=(FONT, FONT_SMALL_SIZE, "italic"),
                 )
 
         def draw_race(x: float, y_centre: float, y_spacing: float, race: Race) -> float:
@@ -243,13 +274,26 @@ class KnockoutTab(AppTab):
             line_x_start = x + LABEL_WIDTH + TEXT_MARGIN
             line_x_end = x + LABEL_WIDTH + TEXT_MARGIN + 2 * HORIZONTAL_LINE_LENGTH
 
+            def draw_race_number(
+                anchor: Literal["nw", "n", "ne", "w", "center", "e", "sw", "s", "se"],
+            ) -> None:
+                """Draws the race number."""
+                self._canvas.create_text(
+                    line_x_start + HORIZONTAL_LINE_LENGTH - SHORT_TEXT_MARGIN,
+                    y_centre,
+                    anchor=anchor,
+                    text=race.race_number,
+                )
+
             def draw_normal_race() -> None:
                 top_y = y_centre - y_spacing / 2
                 bottom_y = y_centre + y_spacing / 2
-                assert not race.is_bye(), "Do not use draw_normal_race() for a bye."
-                draw_number(x, top_y, cast(Car, race.left_car), race.left_prev_race)
+                assert not race.is_bye(), f"Use {draw_bye.__name__}() for a bye."
                 draw_number(
-                    x, bottom_y, cast(Car, race.right_car), race.right_prev_race
+                    x, top_y, race.left_car, race.left_prev_race, race.left_seed
+                )
+                draw_number(
+                    x, bottom_y, race.right_car, race.right_prev_race, race.right_seed
                 )
                 draw_bracket_lines(
                     line_x_start,
@@ -257,11 +301,15 @@ class KnockoutTab(AppTab):
                     y_centre,
                     y_spacing,
                 )
+                draw_race_number(ttkc.E)
 
             def draw_bye() -> None:
-                assert race.is_bye(), "Use draw_normal_race() for non-byes."
-                draw_number(x, y_centre, race.bye_winner(), None)
+                assert race.is_bye(), f"Use {draw_normal_race.__name__}() for non-byes."
+                draw_number(
+                    x, y_centre, race.bye_winner(), None, race.theoretical_winner()
+                )
                 self._canvas.create_line(line_x_start, y_centre, line_x_end, y_centre)
+                draw_race_number(ttkc.SE)
 
             if race.is_bye():
                 draw_bye()
@@ -312,18 +360,22 @@ class KnockoutTab(AppTab):
                 spacing = y_spacing_initial * (2 ** (i // 2))
                 draw_round(x + i * ROUND_WIDTH, y_centre - offset, spacing, round)
                 if i & 0x01 == 0x00:
+                    # Reduction (non-repecharge) round.
                     offset += spacing / 4
 
             return x + len(rounds) * ROUND_WIDTH, y_centre - offset
 
         def draw_grand_final(
             winners_end: Tuple[float, float], losers_end: Tuple[float, float]
-        ) -> None:
+        ) -> float:
             """Draws the grand final and any extended lines from the previous rounds.
 
             Args:
                 winners_end (Tuple[float, float]): The x and y coordinates of the end of the winners round.
                 losers_end (Tuple[float, float]): The x and y coordinates of the end of the losers round.
+
+            Returns:
+                float: The x coordinate of the right side of the label.
             """
             # Main bracket.
             gf_y_centre = (winners_end[1] + losers_end[1]) / 2
@@ -354,8 +406,14 @@ class KnockoutTab(AppTab):
 
             # Add a results box.
             draw_number(
-                right_side + TEXT_MARGIN, gf_y_centre, None, prev_race=event.grand_final
+                right_side + TEXT_MARGIN,
+                gf_y_centre,
+                None,
+                prev_race=event.grand_final,
+                seed=event.grand_final.theoretical_winner(),
             )
+
+            return right_side + TEXT_MARGIN + LABEL_WIDTH
 
         # Titles
         _, _, _, suptitle_bottom = self._canvas.bbox(
@@ -407,10 +465,21 @@ class KnockoutTab(AppTab):
 
         def mark_line(y: float) -> None:
             """Marks a y coordinate for debugging purposes."""
-            self._canvas.create_line(0, y, self.width, y, fill="red")
+            self._canvas.create_line(0, y, self._width, y, fill="red")
 
         # Grand final
-        draw_grand_final(win_end, lose_end)
+        drawing_width = draw_grand_final(win_end, lose_end) + RIGHT_MARGIN
+        drawing_height = (
+            losers_centreline + losers_height / 2 + LABEL_HEIGHT / 2 + BOTTOM_MARGIN
+        )
+        self.set_size(drawing_width, drawing_height)
+
+    def set_size(self, width: float, height: float) -> None:
+        """Sets the size of the canvas."""
+        self._canvas.config(width=width, height=height)
+        self._canvas.config(scrollregion=(0, 0, width, height))
+        self._width = width
+        self._height = height
 
     def export(self, output: str, generate_pdf: bool = True) -> None:
         """Exports the canvas as postscript to a file."""
@@ -427,8 +496,8 @@ class KnockoutTab(AppTab):
             file=postscript_file,
             x=0,
             y=0,
-            width=self.width,
-            height=self.height,
+            width=self._width,
+            height=self._height,
             pagewidth=297,
             pageheight=210,
         )

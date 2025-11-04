@@ -1,6 +1,7 @@
 """A GUI for the application.
 Written by Jotham Gates, 20/10/2025"""
 
+from enum import StrEnum
 import subprocess
 import tkinter as tk
 from typing import Callable, List, Literal, Tuple
@@ -10,7 +11,7 @@ import ttkbootstrap.constants as ttkc
 import ttkbootstrap.tableview as tableview
 from abc import ABC, abstractmethod
 import datetime
-from knockout import KnockoutEvent, Race
+from knockout import KnockoutEvent, Podium, Race
 from car import Car
 
 
@@ -170,26 +171,28 @@ class KnockoutTab(AppTab):
         TOP_MARGIN = LEFT_MARGIN
         RIGHT_MARGIN = LEFT_MARGIN
         BOTTOM_MARGIN = TOP_MARGIN
+        column_width = LABEL_WIDTH + 2 * TEXT_MARGIN + 2 * HORIZONTAL_LINE_LENGTH
 
         def draw_bracket_lines(
             x_start: float, x_end: float, y_centre: float, y_separation: float
         ) -> None:
             top_y = y_centre - y_separation / 2
+            tee_x = x_end - HORIZONTAL_LINE_LENGTH
             self._canvas.create_line(
-                x_start, top_y, x_start + HORIZONTAL_LINE_LENGTH, top_y
+                x_start, top_y, tee_x, top_y
             )
             bottom_y = y_centre + y_separation / 2
             self._canvas.create_line(
-                x_start, bottom_y, x_start + HORIZONTAL_LINE_LENGTH, bottom_y
+                x_start, bottom_y, tee_x, bottom_y
             )
             self._canvas.create_line(
-                x_start + HORIZONTAL_LINE_LENGTH,
+                tee_x,
                 top_y,
-                x_start + HORIZONTAL_LINE_LENGTH,
+                tee_x,
                 bottom_y,
             )
             self._canvas.create_line(
-                x_start + HORIZONTAL_LINE_LENGTH, y_centre, x_end, y_centre
+                tee_x, y_centre, x_end, y_centre
             )
 
         def draw_number(
@@ -223,22 +226,51 @@ class KnockoutTab(AppTab):
                 # There are choices for which car should go in this spot and we are in interactive mode.
                 # Display a drop down menu.
                 current_var = tk.StringVar()
+
+                class StrFixedOptions(StrEnum):
+                    EMPTY = ""
+                    DNR = "DNR"
+
+                values = prev_race.get_options()
+                assert values is not None, "This race says it has competitors but no options."
                 values = (
-                    [""]
-                    + (
-                        [f"{prev_race.left_car.car_id}"]
-                        if prev_race.left_car is not None
-                        else []
-                    )
-                    + (
-                        [f"{prev_race.right_car.car_id}"]
-                        if prev_race.right_car is not None
-                        else []
-                    )
-                    + ["DNR"]
+                    [StrFixedOptions.EMPTY]
+                    + [f"{i.car_id}" for i in values]
+                    + [StrFixedOptions.DNR]
                 )
+
+                def validate(selected:str) -> bool:
+                    """Validates the currently selected combobox and updates the races.
+
+                    Args:
+                        selected (str): The currently selected value.
+
+                    Returns:
+                        bool: Whether the option is valid.
+                    """
+                    if selected in values:
+                        match selected:
+                            case StrFixedOptions.EMPTY:
+                                prev_race.set_winner(Race.WINNER_EMPTY)
+                            case StrFixedOptions.DNR:
+                                prev_race.set_winner(Race.WINNER_DNR)
+                            case _:
+                                number = int(selected)
+                                prev_race.set_winner(number)
+
+                        self.clear()
+                        self.draw(event, show_seed, interactive)
+                        return True
+                    else:
+                        # The user somehow put an invalid number in.
+                        return False
+
                 combobox = ttk.Combobox(
-                    self._frame, textvariable=current_var, values=values
+                    self._frame,
+                    textvariable=current_var,
+                    values=values,
+                    validate="focusin",
+                    validatecommand=(self._frame.register(validate), "%P"),
                 )
                 combobox["state"] = ttkc.READONLY
                 self._canvas.create_window(
@@ -274,17 +306,15 @@ class KnockoutTab(AppTab):
             Returns:
                 float: The x coordinate of the right side of the race.
             """
-            line_x_start = x + LABEL_WIDTH + TEXT_MARGIN
-            line_x_end = x + columns_wide * (
-                LABEL_WIDTH + 2 * TEXT_MARGIN + 2 * HORIZONTAL_LINE_LENGTH
-            )
+            bracket_x_start = x + LABEL_WIDTH + TEXT_MARGIN
+            bracket_x_end = bracket_x_start + 2*HORIZONTAL_LINE_LENGTH + (columns_wide-1)*column_width
 
             def draw_race_number(
                 anchor: Literal["nw", "n", "ne", "w", "center", "e", "sw", "s", "se"],
             ) -> None:
                 """Draws the race number."""
                 self._canvas.create_text(
-                    line_x_start + HORIZONTAL_LINE_LENGTH - SHORT_TEXT_MARGIN,
+                    bracket_x_end - HORIZONTAL_LINE_LENGTH - SHORT_TEXT_MARGIN,
                     y_centre,
                     anchor=anchor,
                     text=race.race_number,
@@ -301,8 +331,8 @@ class KnockoutTab(AppTab):
                     x, bottom_y, race.right_car, race.right_prev_race, race.right_seed
                 )
                 draw_bracket_lines(
-                    line_x_start,
-                    line_x_end - TEXT_MARGIN,
+                    bracket_x_start,
+                    bracket_x_end,
                     y_centre,
                     y_spacing,
                 )
@@ -313,7 +343,9 @@ class KnockoutTab(AppTab):
                 draw_number(
                     x, y_centre, race.bye_winner(), None, race.theoretical_winner()
                 )
-                self._canvas.create_line(line_x_start, y_centre, line_x_end, y_centre)
+                self._canvas.create_line(
+                    bracket_x_start, y_centre, bracket_x_end, y_centre
+                )
                 draw_race_number(ttkc.SE)
 
             if race.is_bye():
@@ -321,7 +353,8 @@ class KnockoutTab(AppTab):
             else:
                 draw_normal_race()
 
-            return line_x_end
+            # Extend the line into the next round if needed.
+            return bracket_x_end + TEXT_MARGIN
 
         def draw_round(
             x: float,
@@ -344,12 +377,8 @@ class KnockoutTab(AppTab):
         ) -> Tuple[float, float]:
             next_x = x
             for i, round in enumerate(rounds):
-                if i == 0 or i == len(rounds) - 1:
-                    # Single column wide for first and last rounds.
-                    cols_wide = 1
-                else:
-                    # Double column wide to allow the losers' bracket to keep up.
-                    cols_wide = 2
+                # Make the round a single column wide for the first and second rounds, 2 for all subsequent to line up with the losers' round.
+                cols_wide = 1 if i < 2 else 2
                 next_x = draw_round(
                     next_x,
                     y_centre,
@@ -492,6 +521,9 @@ class KnockoutTab(AppTab):
         self._canvas.config(scrollregion=(0, 0, width, height))
         self._width = width
         self._height = height
+
+    def clear(self) -> None:
+        self._canvas.delete("all")
 
     def export(self, output: str, generate_pdf: bool = True) -> None:
         """Exports the canvas as postscript to a file."""

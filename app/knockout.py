@@ -4,16 +4,33 @@ from __future__ import annotations
 from abc import ABC
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Iterable, List, cast
+from typing import Iterable, List, Tuple, cast
 import numpy as np
 from car import Car
+from abc import ABC, abstractmethod
 
 
-class Podium:
+class Winnable(ABC):
+    @abstractmethod
+    def update_from_prev_race(self, prev_race: Race, competitor: Car | None) -> None:
+        """Updates the competitors / result of this event based on the previous race.
+
+        Args:
+            prev_race (Race): The previous race that impacts this one.
+            competitor (Car | None): The car (or no car) that feeds into this race.
+        """
+        pass
+
+
+class Podium(Winnable):
     """Class for a placing in the tournament."""
 
     def __init__(self, position: int) -> None:
         self.position = position
+        self.car: Car | None = None
+
+    def update_from_prev_race(self, prev_race: Race, competitor: Car | None) -> None:
+        self.car = competitor
 
     def __str__(self) -> str:
         last_digit = self.position % 10
@@ -30,7 +47,7 @@ class Podium:
         return f"{self.position}{suffix} place"
 
 
-class Race:
+class Race(Winnable):
     """Class that represents a knockout race."""
 
     def __init__(
@@ -72,13 +89,95 @@ class Race:
         Returns:
             bool: True when the race is a bye.
         """
-        return self.has_competitors() and (
-            self.left_car is None or self.right_car is None
-        )
+        # return self.has_competitors() and (
+        #     self.left_car is None or self.right_car is None
+        # ) # TODO: Fix bye detection in first round without compromising next rounds.
+        return self.left_prev_race is None and self.right_prev_race is not None or self.left_prev_race is not None and self.right_prev_race is None
 
     def bye_winner(self) -> Car:
         assert self.is_bye(), "This race must be a bye to call this method."
         return cast(Car, self.left_car if self.left_car is not None else self.right_car)
+
+    WINNER_EMPTY = -1
+    WINNER_DNR = -2
+
+    def get_options(self) -> None | List[Car]:
+        """Returns a list of options that may win the race.
+
+        Returns:
+            None | Tuple[Car] | Tuple[Car, Car]:
+                - None if the entrants are not decided yet.
+                - Tuple[Car] if a single car is eligible (a bye).
+                - Tuple[Car, Car] if two cars are eligible (a race).
+        """
+        if self.left_car is not None and self.right_car is not None:
+            # Both cars (normal race with both competitors)
+            return [self.left_car, self.right_car]
+        elif self.left_car is not None:
+            # Left car only (bye)
+            return [self.left_car]
+        elif self.right_car is not None:
+            # Right car only (bye)
+            return [self.right_car]
+        else:
+            # No competitors.
+            return None
+
+    def set_winner(self, car_number: int) -> None:
+        """Sets the winner of the race.
+
+        Args:
+            car_number (int): The number of the car that won the race.
+
+        Raises:
+            NotImplementedError: If the race was a DNR (TODO).
+            ValueError: If the car number is not part of the race.
+        """
+        # Default is clearing the winners and losers.
+        winner = None
+        loser = None
+        if car_number == self.WINNER_DNR:
+            # Both failed to run. # TODO: Handle
+            raise NotImplementedError("DNR is not implemented yet.")
+        elif self.left_car is not None and car_number == self.left_car.car_id:
+            # Left car won.
+            winner = self.left_car
+            loser = self.right_car
+        elif self.right_car is not None and car_number == self.right_car.car_id:
+            # Right car won.
+            winner = self.right_car
+            loser = self.left_car
+        elif car_number == self.WINNER_EMPTY:
+            # Reset back to empty.
+            pass
+        else:
+            # Unrecognised car.
+            raise ValueError(
+                f"Car {car_number} is not a known competitor in race {str(self)}."
+            )
+
+        # Propagate the result.
+        if self.winner_next_race is not None:
+            self.winner_next_race.update_from_prev_race(self, winner)
+        if self.loser_next_race is not None:
+            self.loser_next_race.update_from_prev_race(self, loser)
+
+    def update_from_prev_race(self, prev_race: Race, competitor: Car | None) -> None:
+        """Sets a competitor of a current race based on updating the previous race.
+
+        Args:
+            prev_race (Race): The previous race.
+            competitor (Car | None): The winner of the previous race.
+
+        Raises:
+            ValueError: If the provided previous race is not actually a previous race.
+        """
+        if prev_race is self.left_prev_race:
+            self.left_car = competitor
+        elif prev_race is self.right_prev_race:
+            self.right_car = competitor
+        else:
+            raise ValueError(f"Race {prev_race} is not a previous race of race {self}.")
 
     def __repr__(self) -> str:
         def car_none_str(car_none: Car | None):
@@ -279,7 +378,8 @@ def add_grand_final(winners_final: Race, losers_final: Race) -> Race:
 
     return grand_final
 
-def number_races_in_round(races: List[Race], start:int) -> int:
+
+def number_races_in_round(races: List[Race], start: int) -> int:
     """Adds the race number to each race in a round.
 
     Args:
@@ -290,20 +390,23 @@ def number_races_in_round(races: List[Race], start:int) -> int:
         int: The number after the last race.
     """
     for i, race in enumerate(races):
-        race.race_number = i+start
-    
+        race.race_number = i + start
+
     return len(races) + start
 
+
 class RoundType(StrEnum):
-    """Enumerator that represents the type of a round.
-    """
-    WINNERS = "P" # P for primary knockout.
-    LOSERS = "SC" # SC for secondary knockout.
+    """Enumerator that represents the type of a round."""
+
+    WINNERS = "P"  # P for primary knockout.
+    LOSERS = "SC"  # SC for secondary knockout.
     GRAND_FINAL = "Grand final"
+
 
 @dataclass
 class RoundId:
     """Class that identifies a round."""
+
     round_type: RoundType
     round_index: int | None = None
 
@@ -312,14 +415,15 @@ class RoundId:
             return f"{self.round_type.value}{self.round_index+1}"
         else:
             return self.round_type.value
-    
+
     def __str__(self) -> str:
         return repr(self)
+
 
 class KnockoutEvent:
     """A class that contains all races for the knockout event."""
 
-    def __init__(self, cars: List[Car], name:str) -> None:
+    def __init__(self, cars: List[Car], name: str) -> None:
         self.winners_bracket = create_empty_draw(len(cars))
         assign_cars(cars, self.winners_bracket[0])
         self.losers_bracket = create_loosers_draw(self.winners_bracket)
@@ -349,20 +453,22 @@ class KnockoutEvent:
         # Initial winners and losers rounds.
         play_order: List[RoundId] = [
             RoundId(RoundType.WINNERS, 0),
-            RoundId(RoundType.LOSERS, 0)
+            RoundId(RoundType.LOSERS, 0),
         ]
 
         # Patterns of 1 winners' round followed by 2 losers' rounds to keep them somewhat in sync.
         for winners_index in range(1, len(self.winners_bracket)):
             play_order.append(RoundId(RoundType.WINNERS, winners_index))
-            play_order.append(RoundId(RoundType.LOSERS, 2*winners_index-1))
-            if len(self.losers_bracket) > 2*winners_index:
+            play_order.append(RoundId(RoundType.LOSERS, 2 * winners_index - 1))
+            if len(self.losers_bracket) > 2 * winners_index:
                 # The last pattern won't have 2 losers rounds back to back.
-                play_order.append(RoundId(RoundType.LOSERS, 2*winners_index))
-        
+                play_order.append(RoundId(RoundType.LOSERS, 2 * winners_index))
+
         # Add the grand final and check the process worked correctly.
         play_order.append(RoundId(RoundType.GRAND_FINAL))
-        assert len(play_order) == len(self.winners_bracket) + len(self.losers_bracket) + 1, "Incorrect number of rounds in the play order."
+        assert (
+            len(play_order) == len(self.winners_bracket) + len(self.losers_bracket) + 1
+        ), "Incorrect number of rounds in the play order."
         return play_order
 
     def _number_races(self) -> None:
@@ -371,8 +477,8 @@ class KnockoutEvent:
         start_number = 1
         for round_id in play_order:
             start_number = number_races_in_round(self.get_round(round_id), start_number)
-    
-    def get_round(self, id:RoundId) -> List[Race]:
+
+    def get_round(self, id: RoundId) -> List[Race]:
         """Gets the round corresponding to a given RoundId object.
 
         Args:
@@ -383,22 +489,24 @@ class KnockoutEvent:
         Returns:
             List[Race]: The corresponding round.
         """
+
         def check_length(bracket: List[List[Race]]) -> List[Race]:
             if id.round_index is None or id.round_index >= len(bracket):
                 raise KeyError(f"Round {str(id)} could not be found in this event.")
             else:
                 return bracket[id.round_index]
-        
+
         match id.round_type:
             case RoundType.WINNERS:
                 return check_length(self.winners_bracket)
             case RoundType.LOSERS:
                 return check_length(self.losers_bracket)
-            
+
             case RoundType.GRAND_FINAL:
                 return [self.grand_final]
 
     def print(self) -> None:
+        """Prints the event to the terminal."""
         print("Winners:")
         print_event(self.winners_bracket)
         print()

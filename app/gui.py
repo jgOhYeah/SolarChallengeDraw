@@ -189,7 +189,9 @@ class KnockoutTab(AppTab):
             )
             self._canvas.create_line(tee_x, y_centre, x_end, y_centre)
 
-        def draw_number(x: float, y: float, race_branch: RaceBranch) -> None:
+        def draw_number(
+            x: float, y: float, race_branch: RaceBranch, editable: bool
+        ) -> None:
             # Draw the seed.
             if show_seed:
                 self._canvas.create_text(
@@ -199,42 +201,19 @@ class KnockoutTab(AppTab):
                     text=race_branch.seed,
                     fill="red",
                 )
-
-            if race_branch.car is not None:
-                # Car is specified. Print that.
-                self._canvas.create_text(
-                    x + LABEL_WIDTH,
-                    y - TEXT_LINE_HEIGHT / 2,
-                    anchor=ttkc.E,
-                    width=LABEL_WIDTH,
-                    text=race_branch.car.car_id,
-                    font=(FONT, FONT_NORMAL_SIZE),
-                )
-                self._canvas.create_text(
-                    x + LABEL_WIDTH,
-                    y + TEXT_LINE_HEIGHT / 2,
-                    anchor=ttkc.E,
-                    width=LABEL_WIDTH,
-                    text=race_branch.car.car_name,
-                    font=(FONT, FONT_SMALL_SIZE, "italic"),
-                )
-            elif (
-                interactive
-                and race_branch.prev_race is not None
-                and race_branch.prev_race.has_competitors()
-            ):
-                # There are choices for which car should go in this spot and we are in interactive mode.
-                # Display a drop down menu.
+            if race_branch.branch_type != RaceBranch.BranchType.FIXED:
+                # Show a combobox (may need to be non-editable).
+                # Create a list of options for the menu.
                 current_var = tk.StringVar()
 
                 class StrFixedOptions(StrEnum):
                     EMPTY = ""
                     DNR = "DNR"
 
-                values = race_branch.prev_race.get_options()
-                assert (
-                    values is not None
-                ), "This race says it has competitors but no options."
+                if race_branch.prev_race is not None:
+                    values = race_branch.prev_race.get_options()
+                else:
+                    values = []
                 values = (
                     [StrFixedOptions.EMPTY]
                     + [f"{i.car_id}" for i in values]
@@ -263,8 +242,10 @@ class KnockoutTab(AppTab):
                                 number = int(selected)
                                 race_branch.prev_race.set_winner(number)
 
+                        # TODO: Update instead of redrawing.
                         self.clear()
                         self.draw(event, show_seed, interactive)
+                        event.print()
                         return True
                     else:
                         # The user somehow put an invalid number in.
@@ -272,12 +253,16 @@ class KnockoutTab(AppTab):
 
                 combobox = ttk.Combobox(
                     self._frame,
-                    textvariable=current_var,
                     values=values,
                     validate="focusin",
                     validatecommand=(self._frame.register(validate), "%P"),
+                    state=ttkc.NORMAL if editable else ttkc.DISABLED,  # TODO: Check.
                 )
-                combobox["state"] = ttkc.READONLY
+
+                # Show the current car if needed.
+                if race_branch.car is not None:
+                    combobox.current(values.index(f"{race_branch.car.car_id}"))
+
                 self._canvas.create_window(
                     x,
                     y,
@@ -286,15 +271,26 @@ class KnockoutTab(AppTab):
                     height=LABEL_HEIGHT,
                     window=combobox,
                 )
-            else:
-                # Undecided, show a placeholder box instead.
-                self._canvas.create_rectangle(
-                    x,
-                    y - LABEL_HEIGHT / 2,
+            elif race_branch.car is not None:
+                # Show the numbers as not a dropdown at all.
+                self._canvas.create_text(
                     x + LABEL_WIDTH,
-                    y + LABEL_HEIGHT / 2,
-                    dash=5,
+                    y - TEXT_LINE_HEIGHT / 2,
+                    anchor=ttkc.E,
+                    width=LABEL_WIDTH,
+                    text=race_branch.car.car_id,
+                    font=(FONT, FONT_NORMAL_SIZE),
                 )
+                self._canvas.create_text(
+                    x + LABEL_WIDTH,
+                    y + TEXT_LINE_HEIGHT / 2,
+                    anchor=ttkc.E,
+                    width=LABEL_WIDTH,
+                    text=race_branch.car.car_name,
+                    font=(FONT, FONT_SMALL_SIZE, "italic"),
+                )
+            else:
+                raise ValueError("Does this bit need an implementation???")
 
         def draw_race(
             x: float, y_centre: float, y_spacing: float, columns_wide: int, race: Race
@@ -333,8 +329,18 @@ class KnockoutTab(AppTab):
                 top_y = y_centre - y_spacing / 2
                 bottom_y = y_centre + y_spacing / 2
                 assert not race.is_bye(), f"Use {draw_bye.__name__}() for a bye."
-                draw_number(x, top_y, race.left_branch)
-                draw_number(x, bottom_y, race.right_branch)
+                draw_number(
+                    x,
+                    top_y,
+                    race.left_branch,
+                    race.is_branch_editable(race.left_branch),
+                )
+                draw_number(
+                    x,
+                    bottom_y,
+                    race.right_branch,
+                    race.is_branch_editable(race.right_branch),
+                )
                 draw_bracket_lines(
                     bracket_x_start,
                     bracket_x_end,
@@ -345,7 +351,12 @@ class KnockoutTab(AppTab):
 
             def draw_bye() -> None:
                 assert race.is_bye(), f"Use {draw_normal_race.__name__}() for non-byes."
-                draw_number(x, y_centre, race.theoretical_winner())
+                draw_number(
+                    x,
+                    y_centre,
+                    race.theoretical_winner(),
+                    race.is_branch_editable(race.theoretical_winner()),
+                )
                 self._canvas.create_line(
                     bracket_x_start, y_centre, bracket_x_end, y_centre
                 )
@@ -449,11 +460,14 @@ class KnockoutTab(AppTab):
             )
 
             # Add a results box.
-            assert isinstance(event.grand_final.winner_next_race, Podium), "The winner of the grand final must end up with a podium."
+            assert isinstance(
+                event.grand_final.winner_next_race, Podium
+            ), "The winner of the grand final must end up with a podium."
             draw_number(
                 right_side,
                 gf_y_centre,
-                event.grand_final.winner_next_race.branch
+                event.grand_final.winner_next_race.branch,
+                True,  # TODO: Implement.
             )
 
             return right_side + TEXT_MARGIN + LABEL_WIDTH

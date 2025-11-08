@@ -1,0 +1,1 @@
+{"rule":"PASSIVE_VOICE","sentence":"^\\QRunning the programme\nIf the terminal has been closed since the virtual environment was last activated, change working directory (\\E(?:Dummy|Ina|Jimmy-)[0-9]+\\Q) to the\\E$"}

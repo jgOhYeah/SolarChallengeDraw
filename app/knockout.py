@@ -32,9 +32,28 @@ class RaceBranch:
             auto()
         )  # This branch depends on a previous race, but may not be edited.
 
-    def waiting_for_competitor(self) -> bool:
-        """Returns True when the branch is waiting for a competitor to be added."""
-        return self.car is None and self.branch_type != RaceBranch.BranchType.FIXED
+    def is_editable(self) -> bool:
+        """Checks if the race branch is editable."""
+        ok_type = self.branch_type == RaceBranch.BranchType.DEPENDENT_EDITABLE
+        winner_race_undecided = True
+        loser_race_undecided = True
+        all_competitors_available = True
+        if self.prev_race is not None:
+            # We need to check the previous race.
+            loser_race_undecided = (self.prev_race.loser_next_race is None) or (
+                not self.prev_race.loser_next_race.is_result_decided()
+            )
+            winner_race_undecided = (self.prev_race.winner_next_race is None) or (
+                not self.prev_race.winner_next_race.is_result_decided()
+            )
+            all_competitors_available = self.prev_race.has_competitors()
+
+        return (
+            ok_type
+            and winner_race_undecided
+            and loser_race_undecided
+            and all_competitors_available
+        )
 
 
 class Winnable(ABC):
@@ -71,14 +90,19 @@ class Winnable(ABC):
         """Returns the number of competitors expected. This may be 1 for a bye or podium and 2 for a race."""
         pass
 
-    def has_competitors(self, filter_prev_race: Race | None = None) -> bool:
-        """Returns true if all cars have been specified for the race / podium.
+    def has_competitors(
+        self, filter_prev_race: Race | None = None, check_any: bool = False
+    ) -> bool:
+        """Returns true if any/all cars have been specified for the race / podium.
 
         Args:
             filter_prev_race (Race | None, optional): If a previous race is provided,
                 only looks in the branch corresponding to this race. This is
-                useful for checking if a previous race has been descided.Defaults to
+                useful for checking if a previous race has been descided. Defaults to
                 None.
+            check_any (bool, optional): If True, returns True if any competitor is
+                set. If False, requires that all competitors be set. Defaults to
+                False
 
         Returns:
             bool: If the required number of competitors for the provided previous race
@@ -88,8 +112,18 @@ class Winnable(ABC):
         for b in branches:
             if b.car is not None:
                 count += 1
-        
-        return count == self.get_expected_competitors()
+
+        result = (
+            # When we don't need the exact number of competitors.
+            count > 0
+            and (check_any or filter_prev_race is not None)
+        ) or count == self.get_expected_competitors()  # Exact required.
+        return result
+
+    @abstractmethod
+    def is_result_decided(self) -> bool:
+        """Checks if the result for the current race or podium is decided."""
+        pass
 
 
 class Podium(Winnable):
@@ -121,6 +155,10 @@ class Podium(Winnable):
 
     def get_expected_competitors(self) -> int:
         return 1
+
+    def is_result_decided(self) -> bool:
+        # return self.branch.car is not None
+        return False # We always need to be able to edit the input branch of a podium (avoids not being able to edit the results of the grand final).
 
     def __str__(self) -> str:
         last_digit = self.position % 10
@@ -314,24 +352,18 @@ class Race(Winnable):
     def get_expected_competitors(self) -> int:
         return 1 if self.is_bye() else 2
 
-    def is_branch_editable(self, branch: RaceBranch) -> bool:
-        """Checks if the race branch is editable."""
-        # TODO: Handle changes with reversions causing paradoxes between the winner's and loser's brackets.
-        assert (
-            branch is self.left_branch or branch is self.right_branch
-        ), "Attempted to check editability with a branch that is not part of this race."
-        return (
-            (
-                self.loser_next_race is None
-                or not self.loser_next_race.has_competitors(self)
-            )
-            and (
-                self.winner_next_race is None
-                or not self.winner_next_race.has_competitors(self)
-            )
-            and branch.branch_type == RaceBranch.BranchType.DEPENDENT_EDITABLE
-            and (branch.prev_race is None or branch.prev_race.has_competitors())
+    def is_result_decided(self):
+        """Checks if the result for the current race is decided."""
+        result = (
+            # Does the corresponding branch in the winner's race have a competitor?
+            self.winner_next_race is not None
+            and self.winner_next_race.has_competitors(self)
+        ) or (
+            # Does the corresponding branch in the loser's race have a competitor?
+            self.loser_next_race is not None
+            and self.loser_next_race.has_competitors(self)
         )
+        return result
 
     def __repr__(self) -> str:
         def car_none_str(car_none: Car | None):

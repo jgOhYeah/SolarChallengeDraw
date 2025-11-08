@@ -129,10 +129,10 @@ class KnockoutTab(AppTab):
 
         # Scroll bars.
         # Based on https://stackoverflow.com/a/68723221
-        self._x_scroll_bar = tk.Scrollbar(
+        self._x_scroll_bar = ttk.Scrollbar(
             self._frame, orient="horizontal", command=self._canvas.xview
         )
-        self._y_scroll_bar = tk.Scrollbar(
+        self._y_scroll_bar = ttk.Scrollbar(
             self._frame, orient="vertical", command=self._canvas.yview
         )
         self._canvas.configure(
@@ -189,9 +189,7 @@ class KnockoutTab(AppTab):
             )
             self._canvas.create_line(tee_x, y_centre, x_end, y_centre)
 
-        def draw_number(
-            x: float, y: float, race_branch: RaceBranch, editable: bool
-        ) -> None:
+        def draw_number(x: float, y: float, race_branch: RaceBranch) -> None:
             # Draw the seed.
             if show_seed:
                 self._canvas.create_text(
@@ -256,7 +254,9 @@ class KnockoutTab(AppTab):
                     values=values,
                     validate="focusin",
                     validatecommand=(self._frame.register(validate), "%P"),
-                    state=ttkc.NORMAL if editable else ttkc.DISABLED,  # TODO: Check.
+                    state=(
+                        ttkc.NORMAL if race_branch.is_editable() else ttkc.DISABLED
+                    ),  # TODO: Check.
                 )
 
                 # Show the current car if needed.
@@ -333,13 +333,11 @@ class KnockoutTab(AppTab):
                     x,
                     top_y,
                     race.left_branch,
-                    race.is_branch_editable(race.left_branch),
                 )
                 draw_number(
                     x,
                     bottom_y,
                     race.right_branch,
-                    race.is_branch_editable(race.right_branch),
                 )
                 draw_bracket_lines(
                     bracket_x_start,
@@ -355,7 +353,6 @@ class KnockoutTab(AppTab):
                     x,
                     y_centre,
                     race.theoretical_winner(),
-                    race.is_branch_editable(race.theoretical_winner()),
                 )
                 self._canvas.create_line(
                     bracket_x_start, y_centre, bracket_x_end, y_centre
@@ -464,10 +461,7 @@ class KnockoutTab(AppTab):
                 event.grand_final.winner_next_race, Podium
             ), "The winner of the grand final must end up with a podium."
             draw_number(
-                right_side,
-                gf_y_centre,
-                event.grand_final.winner_next_race.branch,
-                True,  # TODO: Implement.
+                right_side, gf_y_centre, event.grand_final.winner_next_race.branch
             )
 
             return right_side + TEXT_MARGIN + LABEL_WIDTH
@@ -527,12 +521,20 @@ class KnockoutTab(AppTab):
         # Grand final
         drawing_width = draw_grand_final(win_end, lose_end) + RIGHT_MARGIN
         drawing_height = (
-            losers_centreline + losers_height / 2 + LABEL_HEIGHT / 2 + BOTTOM_MARGIN
+            losers_centreline + losers_height / 2 + LABEL_HEIGHT + BOTTOM_MARGIN
         )
-        self.set_size(drawing_width, drawing_height)
+        self.set_size(self.a_paper_scale((drawing_width, drawing_height)))
 
-    def set_size(self, width: float, height: float) -> None:
+    def a_paper_scale(self, min_dimensions:Tuple[float, float]) -> Tuple[float, float]:
+        """Calculates the minimum size in the A paper ratio."""
+        min_width, min_height = min_dimensions
+        height = max(min_height, min_width/np.sqrt(2))
+        width = height * np.sqrt(2)
+        return width, height
+
+    def set_size(self, dimensions:Tuple[float, float]) -> None:
         """Sets the size of the canvas."""
+        width, height = dimensions
         self._canvas.config(width=width, height=height)
         self._canvas.config(scrollregion=(0, 0, width, height))
         self._width = width

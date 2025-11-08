@@ -32,6 +32,13 @@ class RaceBranch:
             auto()
         )  # This branch depends on a previous race, but may not be edited.
 
+    class BranchResult(Enum):
+        """Represents if a branch is the result of a win or a lose from the previous race."""
+
+        NEITHER = auto()
+        WINNER = auto()
+        LOSER = auto()
+
     def is_editable(self) -> bool:
         """Checks if the race branch is editable."""
         ok_type = self.branch_type == RaceBranch.BranchType.DEPENDENT_EDITABLE
@@ -54,6 +61,23 @@ class RaceBranch:
             and loser_race_undecided
             and all_competitors_available
         )
+
+    def branch_result(self) -> BranchResult:
+        """Works out if the branch is a result of a win, loss or other condition from the previous round."""
+        if (
+            self.prev_race is not None
+            and self.prev_race.loser_next_race is not None
+            and self in self.prev_race.loser_next_race.get_branches(self.prev_race)
+        ):
+            return RaceBranch.BranchResult.LOSER
+        elif (
+            self.prev_race is not None
+            and self.prev_race.winner_next_race is not None
+            and self in self.prev_race.winner_next_race.get_branches(self.prev_race)
+        ):
+            return RaceBranch.BranchResult.WINNER
+        else:
+            return RaceBranch.BranchResult.NEITHER
 
 
 class Winnable(ABC):
@@ -124,7 +148,7 @@ class Winnable(ABC):
     def is_result_decided(self) -> bool:
         """Checks if the result for the current race or podium is decided."""
         pass
-    
+
     @abstractmethod
     def name(self) -> str:
         """Returns a short name for the race/position."""
@@ -387,6 +411,7 @@ class Race(Winnable):
     def name(self) -> str:
         return f"R{self.race_number}"
 
+
 def add_round(next_round: List[Race]) -> List[Race]:
     """Adds a normal round where the number of competitors are halved in the winners' bracket.
     This works backwards and generates the current round given the next round."""
@@ -428,7 +453,7 @@ def add_round(next_round: List[Race]) -> List[Race]:
                 branch_type=RaceBranch.BranchType.DEPENDENT_EDITABLE,
             ),
             winner_next_race=next_round_race,
-            loser_show_label=True
+            loser_show_label=True,
         )
         races.append(right_race)
         next_round_race.right_branch.prev_race = right_race
@@ -589,7 +614,9 @@ def assign_cars(cars: List[Car], first_round: List[Race]) -> None:
         race.right_branch.branch_type = RaceBranch.BranchType.FIXED
 
 
-def add_grand_final(winners_final: Race, losers_final: Race, losers_final_repecharge: Race) -> Race:
+def add_grand_final(
+    winners_final: Race, losers_final: Race, losers_final_repecharge: Race
+) -> Race:
     """Adds a grand final and sets the podium results from winning and loosing."""
     assert (
         winners_final.loser_next_race is losers_final
@@ -628,7 +655,7 @@ def add_grand_final(winners_final: Race, losers_final: Race, losers_final_repech
         losers_final.loser_next_race is None
     ), "Loser should be removed and not have a next race."
 
-    def assign_podium_to_loser(race:Race, position:int):
+    def assign_podium_to_loser(race: Race, position: int):
         race.loser_next_race = Podium(position)
         race.loser_show_label = True
         cast(Podium, race.loser_next_race).branch.prev_race = race
@@ -697,7 +724,9 @@ class KnockoutEvent:
             len(self.losers_bracket[-1]) == 1
         ), "Should only be one race in the last round."
         self.grand_final = add_grand_final(
-            self.winners_bracket[-1][0], self.losers_bracket[-1][0], self.losers_bracket[-2][0]
+            self.winners_bracket[-1][0],
+            self.losers_bracket[-1][0],
+            self.losers_bracket[-2][0],
         )
         self._number_races()
 

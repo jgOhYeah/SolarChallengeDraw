@@ -4,7 +4,7 @@ Written by Jotham Gates, 20/10/2025"""
 from enum import StrEnum
 import subprocess
 import tkinter as tk
-from typing import Callable, List, Literal, Tuple
+from typing import Callable, List, Literal, Tuple, cast
 import numpy as np
 import ttkbootstrap as ttk
 import ttkbootstrap.constants as ttkc
@@ -159,7 +159,6 @@ class KnockoutTab(AppTab):
         LABEL_HEIGHT = 30
         TEXT_MARGIN = 10
         SHORT_TEXT_MARGIN = TEXT_MARGIN / 2
-        ROUND_WIDTH = 2 * HORIZONTAL_LINE_LENGTH + LABEL_WIDTH + 2 * TEXT_MARGIN
         WINNERS_INITIAL_SPACING = 55
         LOSERS_INITIAL_SPACING = 80
         TEXT_LINE_HEIGHT = 12
@@ -172,6 +171,10 @@ class KnockoutTab(AppTab):
         TOP_MARGIN = LEFT_MARGIN
         RIGHT_MARGIN = LEFT_MARGIN
         BOTTOM_MARGIN = TOP_MARGIN
+        ARROW_HEIGHT = 15
+        ARROW_WIDTH = 20
+        BRACKET_VERTICAL_SEPARATION = 50
+        FIRST_COLUMN_HINT_WIDTH = LABEL_WIDTH
         column_width = LABEL_WIDTH + 2 * TEXT_MARGIN + 2 * HORIZONTAL_LINE_LENGTH
 
         def draw_bracket_lines(
@@ -291,7 +294,40 @@ class KnockoutTab(AppTab):
                     font=(FONT, FONT_SMALL_SIZE, "italic"),
                 )
             else:
-                raise ValueError("Does this bit need an implementation???")
+                raise NotImplementedError("Does this bit need an implementation???")
+
+            # Arrow hinting where the competitor came from.
+            show_label = False
+            text = ""
+            match race_branch.branch_result():
+                case RaceBranch.BranchResult.WINNER:
+                    if (
+                        race_branch.prev_race is not None
+                        and race_branch.prev_race.winner_show_label
+                        and not isinstance(
+                            race_branch.prev_race.winner_next_race, Podium
+                        )
+                    ):
+                        # Show the winner's label.
+                        show_label = True
+                        text = "Winner"
+
+                case RaceBranch.BranchResult.LOSER:
+                    if (
+                        race_branch.prev_race is not None
+                        and race_branch.prev_race.loser_show_label
+                        and not isinstance(
+                            race_branch.prev_race.loser_next_race, Podium
+                        )
+                    ):
+                        # Show the winner's label.
+                        show_label = True
+                        text = "Loser"
+
+            if show_label:
+                draw_hint_from_arrow(
+                    x - SHORT_TEXT_MARGIN, y, cast(Race, race_branch.prev_race), text
+                )
 
         def draw_hint_to_arrow(
             x: float,
@@ -301,10 +337,7 @@ class KnockoutTab(AppTab):
             if_dnr: bool = False,
             flip: Literal[-1] | Literal[1] = 1,
         ) -> None:
-            ARROW_HEIGHT = 15
-            ARROW_WIDTH = 20
-            # arc_coords = x, y-ARROW_HEIGHT, x+2*ARROW_WIDTH, y+ARROW_HEIGHT
-            # self._canvas.create_arc(arc_coords, start=180, extent=90, style=tk.ARC)
+            """Draws an arrow to show where to proceed from a race."""
             points = [
                 x,
                 y,
@@ -326,6 +359,40 @@ class KnockoutTab(AppTab):
                 text=f"{result_name} to {to_race.name()}{if_dnr_text}",
                 anchor=ttkc.W,
                 font=(FONT, FONT_SMALL_SIZE),
+            )
+
+        def draw_hint_from_arrow(
+            x: float,
+            y: float,
+            from_race: Race | Podium,
+            result_name: str,
+            if_dnr: bool = False,
+        ) -> None:
+            """Draws and arrow to show which race a competitor is coming from.
+            This complements draw_hint_to_arrow().
+
+            Args:
+                x (float): The x coordinate for the RIGHT side of the label.
+                y (float): The y centre coordinate.
+                from_race (Race | Podium): The race the arrow is coming from.
+                result_name (str): "Winner" or "Loser"
+                if_dnr (bool, optional): Adds an "if DNR" qualifier. Defaults to False.
+            """
+            points = [x - ARROW_WIDTH, y, x, y]
+            self._canvas.create_line(points, arrow="last", smooth=True)
+
+            if_dnr_text = ""
+            if if_dnr:
+                if_dnr_text = " if DNR"
+
+            text_left_x, _, _, _ = self._canvas.bbox(
+                self._canvas.create_text(
+                    x - ARROW_WIDTH - SHORT_TEXT_MARGIN,
+                    y,
+                    text=f"{result_name} from {from_race.name()}{if_dnr_text}",
+                    anchor=ttkc.E,
+                    font=(FONT, FONT_SMALL_SIZE),
+                )
             )
 
         def draw_race(
@@ -400,6 +467,7 @@ class KnockoutTab(AppTab):
             else:
                 draw_normal_race()
 
+            # Arrows going from the race.
             arrow_x = bracket_x_end - HORIZONTAL_LINE_LENGTH + TEXT_MARGIN
             if race.loser_show_label:
                 assert (
@@ -423,7 +491,7 @@ class KnockoutTab(AppTab):
                     race.winner_next_race,
                     "Winner",
                     race.is_bye(),
-                    flip=-1
+                    flip=-1,
                 )
 
             # Extend the line into the next round if needed.
@@ -460,7 +528,7 @@ class KnockoutTab(AppTab):
                     columns_wide=cols_wide,
                 )
 
-            return x + len(rounds) * ROUND_WIDTH, y_centre
+            return x + len(rounds) * column_width, y_centre
 
         def draw_losers_bracket(
             x: float,
@@ -484,7 +552,7 @@ class KnockoutTab(AppTab):
             for i, round in enumerate(rounds):
                 spacing = y_spacing_initial * (2 ** (i // 2))
                 draw_round(
-                    x + i * ROUND_WIDTH,
+                    x + i * column_width,
                     y_centre - offset,
                     spacing,
                     round,
@@ -494,7 +562,7 @@ class KnockoutTab(AppTab):
                     # Reduction (non-repecharge) round.
                     offset += spacing / 4
 
-            return x + len(rounds) * ROUND_WIDTH, y_centre - offset
+            return x + len(rounds) * column_width, y_centre - offset
 
         def draw_grand_final(
             winners_end: Tuple[float, float], losers_end: Tuple[float, float]
@@ -554,14 +622,19 @@ class KnockoutTab(AppTab):
             winners_title_bottom + TEXT_MARGIN + winners_height / 2 + LABEL_HEIGHT / 2
         )
         win_end = draw_winners_bracket(
-            LEFT_MARGIN,
+            LEFT_MARGIN + FIRST_COLUMN_HINT_WIDTH,
             winners_centreline,
             WINNERS_INITIAL_SPACING,
             event.winners_bracket,
         )
 
         # Losers' bracket
-        winners_bottom = winners_centreline + winners_height / 2 + LABEL_HEIGHT
+        winners_bottom = (
+            winners_centreline
+            + winners_height / 2
+            + LABEL_HEIGHT
+            + BRACKET_VERTICAL_SEPARATION
+        )
         _, _, _, losers_title_bottom = self._canvas.bbox(
             self._canvas.create_text(
                 LEFT_MARGIN,
@@ -576,7 +649,10 @@ class KnockoutTab(AppTab):
             losers_title_bottom + TEXT_MARGIN + losers_height / 2 + LABEL_HEIGHT / 2
         )
         lose_end = draw_losers_bracket(
-            LEFT_MARGIN, losers_centreline, LOSERS_INITIAL_SPACING, event.losers_bracket
+            LEFT_MARGIN + FIRST_COLUMN_HINT_WIDTH,
+            losers_centreline,
+            LOSERS_INITIAL_SPACING,
+            event.losers_bracket,
         )
 
         def mark_line(y: float) -> None:

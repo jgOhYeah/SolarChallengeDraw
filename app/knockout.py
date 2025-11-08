@@ -124,6 +124,11 @@ class Winnable(ABC):
     def is_result_decided(self) -> bool:
         """Checks if the result for the current race or podium is decided."""
         pass
+    
+    @abstractmethod
+    def name(self) -> str:
+        """Returns a short name for the race/position."""
+        pass
 
 
 class Podium(Winnable):
@@ -158,9 +163,9 @@ class Podium(Winnable):
 
     def is_result_decided(self) -> bool:
         # return self.branch.car is not None
-        return False # We always need to be able to edit the input branch of a podium (avoids not being able to edit the results of the grand final).
+        return False  # We always need to be able to edit the input branch of a podium (avoids not being able to edit the results of the grand final).
 
-    def __str__(self) -> str:
+    def name(self) -> str:
         last_digit = self.position % 10
         match last_digit:
             case 1:
@@ -184,11 +189,15 @@ class Race(Winnable):
         right_branch: RaceBranch,
         winner_next_race: Race | Podium | None = None,
         loser_next_race: Race | Podium | None = None,
+        winner_show_label: bool = False,
+        loser_show_label: bool = False,
     ):
         self.left_branch = left_branch
         self.right_branch = right_branch
         self.winner_next_race: Race | Podium | None = winner_next_race
         self.loser_next_race: Race | Podium | None = loser_next_race
+        self.winner_show_label = winner_show_label
+        self.loser_show_label = loser_show_label
         self.race_number: int = 0
 
     def theoretical_winner(self) -> RaceBranch:
@@ -373,11 +382,13 @@ class Race(Winnable):
             else:
                 return repr(car_none)
 
-        return f"({self.left_branch.seed:>2d} {car_none_str(self.left_branch.car)}, {self.right_branch.seed:>2d} {car_none_str(self.right_branch.car)})"
+        return f"{self.name()}({self.left_branch.seed:>2d} {car_none_str(self.left_branch.car)}, {self.right_branch.seed:>2d} {car_none_str(self.right_branch.car)})"
 
+    def name(self) -> str:
+        return f"R{self.race_number}"
 
 def add_round(next_round: List[Race]) -> List[Race]:
-    """Adds a normal round where the number of competitors are halved.
+    """Adds a normal round where the number of competitors are halved in the winners' bracket.
     This works backwards and generates the current round given the next round."""
     races = []
     competitors_in_round = 4 * len(next_round)
@@ -400,6 +411,7 @@ def add_round(next_round: List[Race]) -> List[Race]:
                 branch_type=RaceBranch.BranchType.DEPENDENT_EDITABLE,
             ),
             winner_next_race=next_round_race,
+            loser_show_label=True,
         )
         races.append(left_race)
         next_round_race.left_branch.prev_race = left_race
@@ -416,6 +428,7 @@ def add_round(next_round: List[Race]) -> List[Race]:
                 branch_type=RaceBranch.BranchType.DEPENDENT_EDITABLE,
             ),
             winner_next_race=next_round_race,
+            loser_show_label=True
         )
         races.append(right_race)
         next_round_race.right_branch.prev_race = right_race
@@ -434,6 +447,7 @@ def create_empty_draw(competitors: int) -> List[List[Race]]:
             seed=2,
             branch_type=RaceBranch.BranchType.DEPENDENT_EDITABLE,
         ),
+        loser_show_label=True,
     )
 
     event: List[List[Race]] = [[single_elim_final]]
@@ -551,7 +565,7 @@ def create_loosers_draw(winners: List[List[Race]]) -> List[List[Race]]:
         losers.append(forward_knockout(losers[-1]))
 
         # Add the repecharge.
-        reverse_winners = bool(i & 0x1)
+        reverse_winners = not bool(i & 0x1)
         losers.append(add_repecharge(winners[i], losers[-1], reverse_winners))
 
     return losers
@@ -575,7 +589,7 @@ def assign_cars(cars: List[Car], first_round: List[Race]) -> None:
         race.right_branch.branch_type = RaceBranch.BranchType.FIXED
 
 
-def add_grand_final(winners_final: Race, losers_final: Race) -> Race:
+def add_grand_final(winners_final: Race, losers_final: Race, losers_final_repecharge: Race) -> Race:
     """Adds a grand final and sets the podium results from winning and loosing."""
     assert (
         winners_final.loser_next_race is losers_final
@@ -593,6 +607,8 @@ def add_grand_final(winners_final: Race, losers_final: Race) -> Race:
         ),
         winner_next_race=Podium(1),
         loser_next_race=Podium(2),
+        winner_show_label=True,
+        loser_show_label=True,
     )
     cast(Podium, grand_final.winner_next_race).branch.prev_race = grand_final
     cast(Podium, grand_final.loser_next_race).branch.prev_race = grand_final
@@ -607,11 +623,19 @@ def add_grand_final(winners_final: Race, losers_final: Race) -> Race:
     ), "Should not have a grand final for the losers already."
     losers_final.winner_next_race = grand_final
 
-    # Set the 3rd place podium.
+    # Set the 3rd and 4th place podiums.
     assert (
         losers_final.loser_next_race is None
     ), "Loser should be removed and not have a next race."
-    losers_final.loser_next_race = Podium(3)
+
+    def assign_podium_to_loser(race:Race, position:int):
+        race.loser_next_race = Podium(position)
+        race.loser_show_label = True
+        cast(Podium, race.loser_next_race).branch.prev_race = race
+
+    assign_podium_to_loser(losers_final, 3)
+    assign_podium_to_loser(losers_final_repecharge, 4)
+
     cast(Podium, losers_final.loser_next_race).branch.prev_race = losers_final
 
     return grand_final
@@ -673,7 +697,7 @@ class KnockoutEvent:
             len(self.losers_bracket[-1]) == 1
         ), "Should only be one race in the last round."
         self.grand_final = add_grand_final(
-            self.winners_bracket[-1][0], self.losers_bracket[-1][0]
+            self.winners_bracket[-1][0], self.losers_bracket[-1][0], self.losers_bracket[-2][0]
         )
         self._number_races()
 

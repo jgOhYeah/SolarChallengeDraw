@@ -155,12 +155,13 @@ class KnockoutTab(AppTab):
             event (KnockoutEvent): The event to plot.
         """
         HORIZONTAL_LINE_LENGTH = 20
-        LABEL_WIDTH = 80
-        LABEL_HEIGHT = 20
+        LABEL_WIDTH = 100
+        LABEL_HEIGHT = 30
         TEXT_MARGIN = 10
         SHORT_TEXT_MARGIN = TEXT_MARGIN / 2
         ROUND_WIDTH = 2 * HORIZONTAL_LINE_LENGTH + LABEL_WIDTH + 2 * TEXT_MARGIN
-        INITIAL_SPACING = 55
+        WINNERS_INITIAL_SPACING = 55
+        LOSERS_INITIAL_SPACING = 80
         TEXT_LINE_HEIGHT = 12
         FONT = "Arial"
         FONT_SMALL_SIZE = 7
@@ -292,6 +293,41 @@ class KnockoutTab(AppTab):
             else:
                 raise ValueError("Does this bit need an implementation???")
 
+        def draw_hint_to_arrow(
+            x: float,
+            y: float,
+            to_race: Race | Podium,
+            result_name: str,
+            if_dnr: bool = False,
+            flip: Literal[-1] | Literal[1] = 1,
+        ) -> None:
+            ARROW_HEIGHT = 15
+            ARROW_WIDTH = 20
+            # arc_coords = x, y-ARROW_HEIGHT, x+2*ARROW_WIDTH, y+ARROW_HEIGHT
+            # self._canvas.create_arc(arc_coords, start=180, extent=90, style=tk.ARC)
+            points = [
+                x,
+                y,
+                x + ARROW_WIDTH / 3,
+                y + ARROW_HEIGHT * flip,
+                x + 2 * ARROW_WIDTH / 3,
+                y + ARROW_HEIGHT * flip,
+                x + ARROW_WIDTH,
+                y + ARROW_HEIGHT * flip,
+            ]
+            self._canvas.create_line(points, arrow="last", smooth=True)
+            if_dnr_text = ""
+            if if_dnr:
+                if_dnr_text = " if DNR"
+
+            self._canvas.create_text(
+                x + ARROW_WIDTH + SHORT_TEXT_MARGIN,
+                y + ARROW_HEIGHT * flip,
+                text=f"{result_name} to {to_race.name()}{if_dnr_text}",
+                anchor=ttkc.W,
+                font=(FONT, FONT_SMALL_SIZE),
+            )
+
         def draw_race(
             x: float, y_centre: float, y_spacing: float, columns_wide: int, race: Race
         ) -> float:
@@ -322,7 +358,7 @@ class KnockoutTab(AppTab):
                     bracket_x_end - HORIZONTAL_LINE_LENGTH - SHORT_TEXT_MARGIN,
                     y_centre,
                     anchor=anchor,
-                    text=race.race_number,
+                    text=race.name(),
                 )
 
             def draw_normal_race() -> None:
@@ -363,6 +399,32 @@ class KnockoutTab(AppTab):
                 draw_bye()
             else:
                 draw_normal_race()
+
+            arrow_x = bracket_x_end - HORIZONTAL_LINE_LENGTH + TEXT_MARGIN
+            if race.loser_show_label:
+                assert (
+                    race.loser_next_race is not None
+                ), "Show label is True for losers, but no losers to show."
+                draw_hint_to_arrow(
+                    arrow_x,
+                    y_centre + TEXT_MARGIN,
+                    race.loser_next_race,
+                    "Loser",
+                    race.is_bye(),
+                )
+
+            if race.winner_show_label:
+                assert (
+                    race.winner_next_race is not None
+                ), "Show label is True for winners, but no winners to show."
+                draw_hint_to_arrow(
+                    arrow_x,
+                    y_centre - TEXT_MARGIN,
+                    race.winner_next_race,
+                    "Winner",
+                    race.is_bye(),
+                    flip=-1
+                )
 
             # Extend the line into the next round if needed.
             return bracket_x_end + TEXT_MARGIN
@@ -487,12 +549,15 @@ class KnockoutTab(AppTab):
                 anchor=ttkc.NW,
             )
         )
-        winners_height = (len(event.winners_bracket[0]) - 1) * INITIAL_SPACING
+        winners_height = (len(event.winners_bracket[0]) - 1) * WINNERS_INITIAL_SPACING
         winners_centreline = (
             winners_title_bottom + TEXT_MARGIN + winners_height / 2 + LABEL_HEIGHT / 2
         )
         win_end = draw_winners_bracket(
-            LEFT_MARGIN, winners_centreline, INITIAL_SPACING, event.winners_bracket
+            LEFT_MARGIN,
+            winners_centreline,
+            WINNERS_INITIAL_SPACING,
+            event.winners_bracket,
         )
 
         # Losers' bracket
@@ -506,12 +571,12 @@ class KnockoutTab(AppTab):
                 anchor=ttkc.NW,
             )
         )
-        losers_height = (len(event.losers_bracket[0]) - 1) * INITIAL_SPACING
+        losers_height = (len(event.losers_bracket[0]) - 1) * LOSERS_INITIAL_SPACING
         losers_centreline = (
             losers_title_bottom + TEXT_MARGIN + losers_height / 2 + LABEL_HEIGHT / 2
         )
         lose_end = draw_losers_bracket(
-            LEFT_MARGIN, losers_centreline, INITIAL_SPACING, event.losers_bracket
+            LEFT_MARGIN, losers_centreline, LOSERS_INITIAL_SPACING, event.losers_bracket
         )
 
         def mark_line(y: float) -> None:
@@ -525,14 +590,14 @@ class KnockoutTab(AppTab):
         )
         self.set_size(self.a_paper_scale((drawing_width, drawing_height)))
 
-    def a_paper_scale(self, min_dimensions:Tuple[float, float]) -> Tuple[float, float]:
+    def a_paper_scale(self, min_dimensions: Tuple[float, float]) -> Tuple[float, float]:
         """Calculates the minimum size in the A paper ratio."""
         min_width, min_height = min_dimensions
-        height = max(min_height, min_width/np.sqrt(2))
+        height = max(min_height, min_width / np.sqrt(2))
         width = height * np.sqrt(2)
         return width, height
 
-    def set_size(self, dimensions:Tuple[float, float]) -> None:
+    def set_size(self, dimensions: Tuple[float, float]) -> None:
         """Sets the size of the canvas."""
         width, height = dimensions
         self._canvas.config(width=width, height=height)

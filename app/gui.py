@@ -93,40 +93,41 @@ class KnockoutTab(AppTab):
         self._height = 210 * SCALE
         self._canvas = ttk.Canvas(self._frame, width=self._width, height=self._height)
 
-        # Setup pan and zoom
-        # Based on https://stackoverflow.com/a/60149696
-        def zoom_canvas(factor_func: Callable) -> Callable:
-            """Creates a function that will zoom the canvas.
-
-            Args:
-                factor_func (Callable[[tk.Event[tk.Canvas]], float]): Function that will calculate the scaling factor.
-
-            Returns:
-                Callable[[tk.Event[tk.Canvas]], None]: Function that will scale the canvas.
-            """
-
-            def do_zoom(event) -> None:
-                x = self._canvas.canvasx(event.x)
-                y = self._canvas.canvasy(event.y)
-                factor = factor_func(event)
-                # factor = 1.001 ** event.delta
-                self._canvas.scale(tk.ALL, x, y, factor, factor)
-
-            return do_zoom
-
-        # self._canvas.bind(
-        #     "<MouseWheel>", zoom_canvas(lambda e: 1.001**e.delta)
-        # )  # Windows zoom.
-        # self._canvas.bind("<4>", zoom_canvas(lambda _: 1.1))  # Unix zoom in.
-        # self._canvas.bind("<5>", zoom_canvas(lambda _: 0.9))  # Unix zoom out.
-
-        # Scrolling
+        # Scrolling by clicking and dragging.
         self._canvas.bind(
             "<ButtonPress-1>", lambda event: self._canvas.scan_mark(event.x, event.y)
         )
         self._canvas.bind(
             "<B1-Motion>",
             lambda event: self._canvas.scan_dragto(event.x, event.y, gain=1),
+        )
+
+        # Linux scrolling using the mousewheel and trackpad.
+        # Based on https://stackoverflow.com/questions/17355902/tkinter-binding-mousewheel-to-scrollbar
+        # Scrolling up and down.
+        self._canvas.bind("<4>", lambda event: self._canvas.yview_scroll(-1, "units"))
+        self._canvas.bind("<5>", lambda event: self._canvas.yview_scroll(1, "units"))
+
+        # Scrolling left and right.
+        self._canvas.bind(
+            "<Shift-4>", lambda event: self._canvas.xview_scroll(-1, "units")
+        )
+        self._canvas.bind(
+            "<Shift-5>", lambda event: self._canvas.xview_scroll(1, "units")
+        )
+
+        # Windows scrolling using the mousewheel and trackpad. # TODO: Test
+        self._canvas.bind(
+            "<MouseWheel>",
+            lambda event: self._canvas.yview_scroll(
+                int(-1 * (event.delta / 120)), "units"
+            ),
+        )
+        self._canvas.bind(
+            "<Shift-MouseWheel>",
+            lambda event: self._canvas.yview_scroll(
+                int(-1 * (event.delta / 120)), "units"
+            ),
         )
 
         # Scroll bars.
@@ -169,7 +170,7 @@ class KnockoutTab(AppTab):
         """
         self.draw_tree(event, show_seed, interactive)
         self.draw_notes(
-            self._width - self.RIGHT_MARGIN, self._height - self.BOTTOM_MARGIN
+            event, self._width - self.RIGHT_MARGIN, self._height - self.BOTTOM_MARGIN
         )
 
     class NotesBox:
@@ -271,10 +272,14 @@ class KnockoutTab(AppTab):
                 for line in file.readlines():
                     self.process_markdown_line(line)
 
-    def draw_notes(self, x: float, y: float) -> None:
-        notes_box = KnockoutTab.NotesBox(self._canvas, (x - 450, y - 200), (x, y))
+    def draw_notes(self, event: KnockoutEvent, x: float, y: float) -> None:
+        notes_box = KnockoutTab.NotesBox(self._canvas, (x - 450, y - 300), (x, y))
         src_filename = os.path.join(os.path.dirname(__file__), "notes.md")
         notes_box.read_markdown(src_filename)
+        notes_box.add_text(
+            f"Rounds will be run in the following order:\n{event.calculate_play_order()}",
+            bullet_point=True,
+        )
 
     def draw_tree(
         self, event: KnockoutEvent, show_seed: bool = True, interactive: bool = True
@@ -290,6 +295,7 @@ class KnockoutTab(AppTab):
         ARROW_HEIGHT = 15
         ARROW_WIDTH = 20
         BRACKET_VERTICAL_SEPARATION = 50
+        BRACKET_LINE_THICKNESS = 2
         FIRST_COLUMN_HINT_WIDTH = LABEL_WIDTH
         column_width = LABEL_WIDTH + 2 * self.TEXT_MARGIN + 2 * HORIZONTAL_LINE_LENGTH
 
@@ -298,16 +304,19 @@ class KnockoutTab(AppTab):
         ) -> None:
             top_y = y_centre - y_separation / 2
             tee_x = x_end - HORIZONTAL_LINE_LENGTH
-            self._canvas.create_line(x_start, top_y, tee_x, top_y)
-            bottom_y = y_centre + y_separation / 2
-            self._canvas.create_line(x_start, bottom_y, tee_x, bottom_y)
             self._canvas.create_line(
-                tee_x,
-                top_y,
-                tee_x,
-                bottom_y,
+                x_start, top_y, tee_x, top_y, width=BRACKET_LINE_THICKNESS
             )
-            self._canvas.create_line(tee_x, y_centre, x_end, y_centre)
+            bottom_y = y_centre + y_separation / 2
+            self._canvas.create_line(
+                x_start, bottom_y, tee_x, bottom_y, width=BRACKET_LINE_THICKNESS
+            )
+            self._canvas.create_line(
+                tee_x, top_y, tee_x, bottom_y, width=BRACKET_LINE_THICKNESS
+            )
+            self._canvas.create_line(
+                tee_x, y_centre, x_end, y_centre, width=BRACKET_LINE_THICKNESS
+            )
 
         def draw_number(x: float, y: float, race_branch: RaceBranch) -> None:
             # Draw the seed.
@@ -572,7 +581,11 @@ class KnockoutTab(AppTab):
                     race.theoretical_winner(),
                 )
                 self._canvas.create_line(
-                    bracket_x_start, y_centre, bracket_x_end, y_centre
+                    bracket_x_start,
+                    y_centre,
+                    bracket_x_end,
+                    y_centre,
+                    width=BRACKET_LINE_THICKNESS,
                 )
                 draw_race_number(ttkc.SE)
 
@@ -931,6 +944,7 @@ class KnockoutTab(AppTab):
         self._canvas.config(scrollregion=(0, 0, width, height))
         self._width = width
         self._height = height
+        print(f"New size: {dimensions}")
 
     def clear(self) -> None:
         self._canvas.delete("all")
@@ -954,6 +968,7 @@ class KnockoutTab(AppTab):
             height=self._height,
             pagewidth=297,
             pageheight=210,
+            pageanchor=ttkc.NE
         )
 
         # Convert to a pdf

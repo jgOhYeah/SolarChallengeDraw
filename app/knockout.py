@@ -1,4 +1,6 @@
-"""Represents the knockout competition."""
+"""knockout.py
+Represents the knockout competition.
+Written by Jotham Gates, 21/10/2025"""
 
 from __future__ import annotations
 from abc import ABC

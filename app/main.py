@@ -42,6 +42,5 @@ if __name__ == "__main__":
     knockout_event = knockout.KnockoutEvent(cars, "Test event")
     knockout_event.print()
     gui_ui = gui.Gui()
-    gui_ui.knockout.draw(knockout_event)
-    gui_ui.knockout.export("test.ps", generate_pdf=True)
+    gui_ui.knockout._sheet.draw_canvas(knockout_event)
     gui_ui.run()

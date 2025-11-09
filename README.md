@@ -7,7 +7,7 @@ This is a work in progress.
 ## Installation and setup.
 ### Prerequisites
 - Install the [python](https://www.python.org/) interpretor if not already installed (Tested with 3.12, minimum is 3.10).
-- To export PDFs, the `ps2pdf` tool from [Ghostscript](https://ghostscript.com/) is required.
+- To export PDFs, [Ghostscript](https://ghostscript.com/) is required.
 - A [git](https://git-scm.com/) client is highly recommended to download the code, perform version management and keep it up to date.
 - A text editor (like [vscode](https://code.visualstudio.com/)) is highly recommended.
 

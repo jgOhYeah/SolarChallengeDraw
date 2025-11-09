@@ -272,7 +272,7 @@ class KnockoutTab(AppTab):
                     self.process_markdown_line(line)
 
     def draw_notes(self, x: float, y: float) -> None:
-        notes_box = KnockoutTab.NotesBox(self._canvas, (x - 500, y - 200), (x, y))
+        notes_box = KnockoutTab.NotesBox(self._canvas, (x - 450, y - 200), (x, y))
         src_filename = os.path.join(os.path.dirname(__file__), "notes.md")
         notes_box.read_markdown(src_filename)
 
@@ -374,9 +374,7 @@ class KnockoutTab(AppTab):
                     values=values,
                     validate="focusin",
                     validatecommand=(self._frame.register(validate), "%P"),
-                    state=(
-                        ttkc.NORMAL if race_branch.is_editable() else ttkc.DISABLED
-                    ),  # TODO: Check.
+                    state=(ttkc.NORMAL if race_branch.is_editable() else ttkc.DISABLED),
                 )
 
                 # Show the current car if needed.
@@ -613,6 +611,73 @@ class KnockoutTab(AppTab):
             # Extend the line into the next round if needed.
             return bracket_x_end + self.TEXT_MARGIN
 
+        def round_height(round: List[Race], y_spacing: float) -> float:
+            """Calculates the height of a round.
+
+            Args:
+                round (List[Race]): The round to look at.
+                y_spacing (float): The y spacing between branches in the round.
+
+            Returns:
+                float: The height in pixels.
+            """
+            return (2 * len(round) - 1) * y_spacing / 2 + LABEL_HEIGHT
+
+        def draw_round_box(
+            x_end: float,
+            y_centre: float,
+            height: float,
+            offset: float,
+            next_round_height: float,
+            next_round_offset: float,
+            round_name: str,
+        ) -> None:
+            """Draws a box around a round in either the winners' or losers' brackets.
+
+            Args:
+                x (float): The left coordinate of the races in the round.
+                y_centre (float): The y coordinate of the centreline of the round.
+                y_spacing (float): The y spacing between branches in the round.
+                round (List[Race]): The round itself.
+                columns_wide (int): The number of columns wide to draw the round to make it line up correctly.
+                round_name (str): Round name to print.
+
+            Returns:
+                float: The x coordinate of the right side of the races in the round.
+            """
+            # Draw the box and title.
+            BOX_PADDING = 20
+            BOX_FILL = "#cff9f3"
+            TEXT_FILL = "#1E7B6D"
+            box_centre = x_end - HORIZONTAL_LINE_LENGTH - self.TEXT_MARGIN
+            box_half_width = HORIZONTAL_LINE_LENGTH + self.TEXT_MARGIN + BOX_PADDING
+            next_round_top = y_centre - next_round_height / 2 - next_round_offset
+            preferred_text_location = y_centre - (height / 2) - offset
+            text_y_bottom = (
+                min(next_round_top, preferred_text_location) - self.TEXT_MARGIN
+            )
+
+            _, text_y_top, _, _ = self._canvas.bbox(
+                self._canvas.create_text(
+                    box_centre,
+                    text_y_bottom,
+                    anchor=ttkc.S,
+                    text=round_name,
+                    width=2 * box_half_width - 2 * self.TEXT_MARGIN,
+                    font=(self.FONT, self.FONT_NORMAL_SIZE, "bold"),
+                    fill=TEXT_FILL,
+                )
+            )
+            rect = self._canvas.create_rectangle(
+                box_centre - box_half_width,
+                text_y_top - self.TEXT_MARGIN,
+                box_centre + box_half_width,
+                y_centre - offset + (height / 2) + BOX_PADDING,
+                width=0,
+                fill=BOX_FILL,
+            )
+            self._canvas.tag_lower(rect)
+
         def draw_round(
             x: float,
             y_centre: float,
@@ -620,6 +685,20 @@ class KnockoutTab(AppTab):
             round: List[Race],
             columns_wide: int,
         ) -> float:
+            """Draws a round in either the winners' or losers' brackets.
+
+            Args:
+                x (float): The left coordinate of the races in the round.
+                y_centre (float): The y coordinate of the centreline of the round.
+                y_spacing (float): The y spacing between branches in the round.
+                round (List[Race]): The round itself.
+                columns_wide (int): The number of columns wide to draw the round to make it line up correctly.
+
+            Returns:
+                float: The x coordinate of the right side of the races in the round.
+            """
+            # Draw the races
+            x_end = -1.0
             for i, race in enumerate(round):
                 race_y_centre = (i + 0.5 - len(round) / 2) * y_spacing + y_centre
                 x_end = draw_race(x, race_y_centre, y_spacing / 2, columns_wide, race)
@@ -632,6 +711,9 @@ class KnockoutTab(AppTab):
             y_spacing_initial: float,
             rounds: List[List[Race]],
         ) -> Tuple[float, float]:
+            def y_spacing(index) -> float:
+                return y_spacing_initial * (2**index)
+
             next_x = x
             for i, round in enumerate(rounds):
                 # Make the round a single column wide for the first and second rounds, 2 for all subsequent to line up with the losers' round.
@@ -639,9 +721,22 @@ class KnockoutTab(AppTab):
                 next_x = draw_round(
                     next_x,
                     y_centre,
-                    y_spacing_initial * (2**i),
+                    y_spacing(i),
                     round,
                     columns_wide=cols_wide,
+                )
+                draw_round_box(
+                    next_x,
+                    y_centre,
+                    round_height(round, y_spacing(i)),
+                    0,
+                    (
+                        0
+                        if i + 1 == len(rounds)
+                        else round_height(rounds[i + 1], y_spacing(i + 1))
+                    ),
+                    0,
+                    f"P{i+1}",
                 )
 
             return x + len(rounds) * column_width, y_centre
@@ -663,22 +758,46 @@ class KnockoutTab(AppTab):
             Returns:
                 Tuple[float, float]: The x coordinate at the end of the bracket and the centreline of the right hand side.
             """
+
             # TODO: Handle byes in the losers' round.
-            offset = 0
+            def y_spacing(index: int) -> float:
+                """Calculates the required spacing for a round."""
+                return y_spacing_initial * (2 ** (index // 2))
+
+            def y_offset(index: int) -> float:
+                """Calculates the required offset for a round."""
+                index += 1
+                assert index >= 0, "Index shouldn't be negative."
+                index &= 0xFFFE  # Round down to the nearest multiple of 2.
+                if index == 0:
+                    return 0
+                else:
+                    return y_spacing(index - 1) / 4 + y_offset(index - 2)
+
+            next_x = x
             for i, round in enumerate(rounds):
-                spacing = y_spacing_initial * (2 ** (i // 2))
-                draw_round(
-                    x + i * column_width,
-                    y_centre - offset,
-                    spacing,
+                next_x = draw_round(
+                    next_x,
+                    y_centre - y_offset(i),
+                    y_spacing(i),
                     round,
                     columns_wide=1,
                 )
-                if i & 0x01 == 0x00:
-                    # Reduction (non-repecharge) round.
-                    offset += spacing / 4
+                draw_round_box(
+                    next_x,
+                    y_centre,
+                    round_height(round, y_spacing(i)),
+                    y_offset(i),
+                    (
+                        0
+                        if i + 1 == len(rounds)
+                        else round_height(rounds[i + 1], y_spacing(i + 1))
+                    ),
+                    y_offset(i + 1),
+                    f"SC{i+1}",
+                )
 
-            return x + len(rounds) * column_width, y_centre - offset
+            return x + len(rounds) * column_width, y_centre - y_offset(len(rounds))
 
         def draw_grand_final(
             winners_end: Tuple[float, float], losers_end: Tuple[float, float]
@@ -694,12 +813,22 @@ class KnockoutTab(AppTab):
             """
             # Main bracket.
             gf_y_centre = (winners_end[1] + losers_end[1]) / 2
-            right_side = draw_race(
+            gf_y_spacing = 2 * (losers_end[1] - winners_end[1])
+            right_side = draw_round(
                 max(winners_end[0], losers_end[0]),
                 gf_y_centre,
-                losers_end[1] - winners_end[1],
+                gf_y_spacing,
+                [event.grand_final],
                 1,
-                event.grand_final,
+            )
+            draw_round_box(
+                right_side,
+                gf_y_centre,
+                round_height([event.grand_final], gf_y_spacing),
+                0,
+                0,
+                0,
+                f"Grand final",
             )
 
             # Add a results box.
@@ -728,12 +857,12 @@ class KnockoutTab(AppTab):
             self._canvas.create_text(
                 self.LEFT_MARGIN,
                 suptitle_bottom + self.TEXT_MARGIN,
-                text="Winner's bracket",
+                text="Primary draw",
                 font=(self.FONT, self.FONT_TITLE_SIZE),
                 anchor=ttkc.NW,
             )
         )
-        winners_height = (len(event.winners_bracket[0]) - 1) * WINNERS_INITIAL_SPACING
+        winners_height = round_height(event.winners_bracket[0], WINNERS_INITIAL_SPACING)
         winners_centreline = (
             winners_title_bottom
             + self.TEXT_MARGIN
@@ -758,12 +887,12 @@ class KnockoutTab(AppTab):
             self._canvas.create_text(
                 self.LEFT_MARGIN,
                 winners_bottom + self.TEXT_MARGIN,
-                text="Loser's bracket",
+                text="Second chance draw",
                 font=(self.FONT, self.FONT_TITLE_SIZE),
                 anchor=ttkc.NW,
             )
         )
-        losers_height = (len(event.losers_bracket[0]) - 1) * LOSERS_INITIAL_SPACING
+        losers_height = round_height(event.losers_bracket[0], LOSERS_INITIAL_SPACING)
         losers_centreline = (
             losers_title_bottom
             + self.TEXT_MARGIN

@@ -1,7 +1,9 @@
 """A GUI for the application.
 Written by Jotham Gates, 20/10/2025"""
 
+from __future__ import annotations
 from enum import StrEnum
+import os
 import subprocess
 import tkinter as tk
 from typing import Callable, List, Literal, Tuple, cast
@@ -146,6 +148,17 @@ class KnockoutTab(AppTab):
         self._frame.grid_rowconfigure(0, weight=1)
         self._frame.grid_columnconfigure(0, weight=1)
 
+    LEFT_MARGIN = 10
+    TOP_MARGIN = LEFT_MARGIN
+    RIGHT_MARGIN = LEFT_MARGIN
+    BOTTOM_MARGIN = TOP_MARGIN
+    TEXT_MARGIN = 10
+    FONT = "Arial"
+    FONT_SMALL_SIZE = 7
+    FONT_NORMAL_SIZE = 10
+    FONT_TITLE_SIZE = 15
+    FONT_SUPTITLE_SIZE = 30
+
     def draw(
         self, event: KnockoutEvent, show_seed: bool = True, interactive: bool = True
     ) -> None:
@@ -154,28 +167,131 @@ class KnockoutTab(AppTab):
         Args:
             event (KnockoutEvent): The event to plot.
         """
+        self.draw_tree(event, show_seed, interactive)
+        self.draw_notes(
+            self._width - self.RIGHT_MARGIN, self._height - self.BOTTOM_MARGIN
+        )
+
+    class NotesBox:
+        """Class that handles items in the notes box."""
+
+        def __init__(
+            self,
+            canvas: ttk.Canvas,
+            top_left: Tuple[float, float],
+            bottom_right: Tuple[float, float],
+        ) -> None:
+            """Creates an empty notes box.
+
+            Args:
+                canvas (ttk.Canvas): The canvas to draw on.
+                top_left (Tuple[float, float]): The top left coordinates.
+                bottom_right (Tuple[float, float]): The bottom right coordinates.
+            """
+            self._canvas = canvas
+            self._top_left = top_left
+            self._bottom_right = bottom_right
+            self._canvas.create_rectangle(self._top_left, self._bottom_right)
+            self._y_pos: float = self._top_left[1] + KnockoutTab.TEXT_MARGIN
+
+        def add_text(
+            self, text: str, font: tuple | None = None, bullet_point: bool = False
+        ) -> None:
+            """Adds text to the notes box.
+
+            Args:
+                text (str): The text to show.
+                font (tuple | None, optional): Font and size specification if needed. Defaults to None.
+                bullet_point (bool, optional): If True, shows a bullet point. Defaults to False.
+            """
+            # Specify the font if left blank.
+            if font is None:
+                font = (KnockoutTab.FONT, KnockoutTab.FONT_NORMAL_SIZE)
+
+            # Positions and widths
+            # Defaults for no bullet point.
+            left = self._top_left[0] + KnockoutTab.TEXT_MARGIN
+            text_width = (
+                self._bottom_right[0] - self._top_left[0] - 2 * KnockoutTab.TEXT_MARGIN
+            )
+            if bullet_point:
+                # Adding a bullet point.
+                BULLET_POINT_WIDTH = 15
+                left += BULLET_POINT_WIDTH
+                text_width -= BULLET_POINT_WIDTH
+                self._canvas.create_text(
+                    left,
+                    self._y_pos,
+                    anchor=ttkc.NE,
+                    font=font,
+                    text="• ",
+                    width=BULLET_POINT_WIDTH,
+                )
+
+            # Draw the text.
+            _, _, _, bottom = self._canvas.bbox(
+                self._canvas.create_text(
+                    left,
+                    self._y_pos,
+                    anchor=ttkc.NW,
+                    font=font,
+                    text=text,
+                    width=text_width,
+                )
+            )
+            self._y_pos = bottom
+
+        def process_markdown_line(self, line: str) -> None:
+            """Very basic formatter for extremely limited markdown."""
+            line = line.strip()
+
+            # Headings and bullet points.
+            font = (KnockoutTab.FONT, KnockoutTab.FONT_NORMAL_SIZE)
+            bullet = False
+            if line.startswith("#"):
+                # Title.
+                font = (KnockoutTab.FONT, KnockoutTab.FONT_TITLE_SIZE)
+                line = line.lstrip("# ")
+            elif line.startswith("-"):
+                # Bullet point.
+                bullet = True
+                line = line.lstrip("- ")
+
+            self.add_text(line, font, bullet)
+
+        def read_markdown(self, filename: str) -> None:
+            """Reads a markdown file.
+
+            The parser is extremely basic.
+
+            Args:
+                filename (str): The name of the file to read.
+            """
+            with open(filename) as file:
+                for line in file.readlines():
+                    self.process_markdown_line(line)
+
+    def draw_notes(self, x: float, y: float) -> None:
+        notes_box = KnockoutTab.NotesBox(self._canvas, (x - 500, y - 200), (x, y))
+        src_filename = os.path.join(os.path.dirname(__file__), "notes.md")
+        notes_box.read_markdown(src_filename)
+
+    def draw_tree(
+        self, event: KnockoutEvent, show_seed: bool = True, interactive: bool = True
+    ) -> None:
+        """Draws the tree of the knockout event on the canvas."""
         HORIZONTAL_LINE_LENGTH = 20
         LABEL_WIDTH = 100
         LABEL_HEIGHT = 30
-        TEXT_MARGIN = 10
-        SHORT_TEXT_MARGIN = TEXT_MARGIN / 2
+        SHORT_TEXT_MARGIN = self.TEXT_MARGIN / 2
         WINNERS_INITIAL_SPACING = 55
         LOSERS_INITIAL_SPACING = 80
         TEXT_LINE_HEIGHT = 12
-        FONT = "Arial"
-        FONT_SMALL_SIZE = 7
-        FONT_NORMAL_SIZE = 10
-        FONT_TITLE_SIZE = 15
-        FONT_SUPTITLE_SIZE = 30
-        LEFT_MARGIN = 10
-        TOP_MARGIN = LEFT_MARGIN
-        RIGHT_MARGIN = LEFT_MARGIN
-        BOTTOM_MARGIN = TOP_MARGIN
         ARROW_HEIGHT = 15
         ARROW_WIDTH = 20
         BRACKET_VERTICAL_SEPARATION = 50
         FIRST_COLUMN_HINT_WIDTH = LABEL_WIDTH
-        column_width = LABEL_WIDTH + 2 * TEXT_MARGIN + 2 * HORIZONTAL_LINE_LENGTH
+        column_width = LABEL_WIDTH + 2 * self.TEXT_MARGIN + 2 * HORIZONTAL_LINE_LENGTH
 
         def draw_bracket_lines(
             x_start: float, x_end: float, y_centre: float, y_separation: float
@@ -283,7 +399,7 @@ class KnockoutTab(AppTab):
                     anchor=ttkc.E,
                     width=LABEL_WIDTH,
                     text=race_branch.car.car_id,
-                    font=(FONT, FONT_NORMAL_SIZE),
+                    font=(self.FONT, self.FONT_NORMAL_SIZE),
                 )
                 self._canvas.create_text(
                     x + LABEL_WIDTH,
@@ -291,7 +407,7 @@ class KnockoutTab(AppTab):
                     anchor=ttkc.E,
                     width=LABEL_WIDTH,
                     text=race_branch.car.car_name,
-                    font=(FONT, FONT_SMALL_SIZE, "italic"),
+                    font=(self.FONT, self.FONT_SMALL_SIZE, "italic"),
                 )
             else:
                 raise NotImplementedError("Does this bit need an implementation???")
@@ -358,7 +474,7 @@ class KnockoutTab(AppTab):
                 y + ARROW_HEIGHT * flip,
                 text=f"{result_name} to {to_race.name()}{if_dnr_text}",
                 anchor=ttkc.W,
-                font=(FONT, FONT_SMALL_SIZE),
+                font=(self.FONT, self.FONT_SMALL_SIZE),
             )
 
         def draw_hint_from_arrow(
@@ -391,7 +507,7 @@ class KnockoutTab(AppTab):
                     y,
                     text=f"{result_name} from {from_race.name()}{if_dnr_text}",
                     anchor=ttkc.E,
-                    font=(FONT, FONT_SMALL_SIZE),
+                    font=(self.FONT, self.FONT_SMALL_SIZE),
                 )
             )
 
@@ -410,7 +526,7 @@ class KnockoutTab(AppTab):
             Returns:
                 float: The x coordinate of the right side of the race.
             """
-            bracket_x_start = x + LABEL_WIDTH + TEXT_MARGIN
+            bracket_x_start = x + LABEL_WIDTH + self.TEXT_MARGIN
             bracket_x_end = (
                 bracket_x_start
                 + 2 * HORIZONTAL_LINE_LENGTH
@@ -468,14 +584,14 @@ class KnockoutTab(AppTab):
                 draw_normal_race()
 
             # Arrows going from the race.
-            arrow_x = bracket_x_end - HORIZONTAL_LINE_LENGTH + TEXT_MARGIN
+            arrow_x = bracket_x_end - HORIZONTAL_LINE_LENGTH + self.TEXT_MARGIN
             if race.loser_show_label:
                 assert (
                     race.loser_next_race is not None
                 ), "Show label is True for losers, but no losers to show."
                 draw_hint_to_arrow(
                     arrow_x,
-                    y_centre + TEXT_MARGIN,
+                    y_centre + self.TEXT_MARGIN,
                     race.loser_next_race,
                     "Loser",
                     race.is_bye(),
@@ -487,7 +603,7 @@ class KnockoutTab(AppTab):
                 ), "Show label is True for winners, but no winners to show."
                 draw_hint_to_arrow(
                     arrow_x,
-                    y_centre - TEXT_MARGIN,
+                    y_centre - self.TEXT_MARGIN,
                     race.winner_next_race,
                     "Winner",
                     race.is_bye(),
@@ -495,7 +611,7 @@ class KnockoutTab(AppTab):
                 )
 
             # Extend the line into the next round if needed.
-            return bracket_x_end + TEXT_MARGIN
+            return bracket_x_end + self.TEXT_MARGIN
 
         def draw_round(
             x: float,
@@ -594,15 +710,15 @@ class KnockoutTab(AppTab):
                 right_side, gf_y_centre, event.grand_final.winner_next_race.branch
             )
 
-            return right_side + TEXT_MARGIN + LABEL_WIDTH
+            return right_side + self.TEXT_MARGIN + LABEL_WIDTH
 
         # Titles
         _, _, _, suptitle_bottom = self._canvas.bbox(
             self._canvas.create_text(
-                LEFT_MARGIN,
-                TOP_MARGIN,
+                self.LEFT_MARGIN,
+                self.TOP_MARGIN,
                 text=event.name,
-                font=(FONT, FONT_SUPTITLE_SIZE),
+                font=(self.FONT, self.FONT_SUPTITLE_SIZE),
                 anchor=ttkc.NW,
             )
         )
@@ -610,19 +726,22 @@ class KnockoutTab(AppTab):
         # Winners' bracket.
         _, _, _, winners_title_bottom = self._canvas.bbox(
             self._canvas.create_text(
-                LEFT_MARGIN,
-                suptitle_bottom + TEXT_MARGIN,
+                self.LEFT_MARGIN,
+                suptitle_bottom + self.TEXT_MARGIN,
                 text="Winner's bracket",
-                font=(FONT, FONT_TITLE_SIZE),
+                font=(self.FONT, self.FONT_TITLE_SIZE),
                 anchor=ttkc.NW,
             )
         )
         winners_height = (len(event.winners_bracket[0]) - 1) * WINNERS_INITIAL_SPACING
         winners_centreline = (
-            winners_title_bottom + TEXT_MARGIN + winners_height / 2 + LABEL_HEIGHT / 2
+            winners_title_bottom
+            + self.TEXT_MARGIN
+            + winners_height / 2
+            + LABEL_HEIGHT / 2
         )
         win_end = draw_winners_bracket(
-            LEFT_MARGIN + FIRST_COLUMN_HINT_WIDTH,
+            self.LEFT_MARGIN + FIRST_COLUMN_HINT_WIDTH,
             winners_centreline,
             WINNERS_INITIAL_SPACING,
             event.winners_bracket,
@@ -637,19 +756,22 @@ class KnockoutTab(AppTab):
         )
         _, _, _, losers_title_bottom = self._canvas.bbox(
             self._canvas.create_text(
-                LEFT_MARGIN,
-                winners_bottom + TEXT_MARGIN,
+                self.LEFT_MARGIN,
+                winners_bottom + self.TEXT_MARGIN,
                 text="Loser's bracket",
-                font=(FONT, FONT_TITLE_SIZE),
+                font=(self.FONT, self.FONT_TITLE_SIZE),
                 anchor=ttkc.NW,
             )
         )
         losers_height = (len(event.losers_bracket[0]) - 1) * LOSERS_INITIAL_SPACING
         losers_centreline = (
-            losers_title_bottom + TEXT_MARGIN + losers_height / 2 + LABEL_HEIGHT / 2
+            losers_title_bottom
+            + self.TEXT_MARGIN
+            + losers_height / 2
+            + LABEL_HEIGHT / 2
         )
         lose_end = draw_losers_bracket(
-            LEFT_MARGIN + FIRST_COLUMN_HINT_WIDTH,
+            self.LEFT_MARGIN + FIRST_COLUMN_HINT_WIDTH,
             losers_centreline,
             LOSERS_INITIAL_SPACING,
             event.losers_bracket,
@@ -660,9 +782,9 @@ class KnockoutTab(AppTab):
             self._canvas.create_line(0, y, self._width, y, fill="red")
 
         # Grand final
-        drawing_width = draw_grand_final(win_end, lose_end) + RIGHT_MARGIN
+        drawing_width = draw_grand_final(win_end, lose_end) + self.RIGHT_MARGIN
         drawing_height = (
-            losers_centreline + losers_height / 2 + LABEL_HEIGHT + BOTTOM_MARGIN
+            losers_centreline + losers_height / 2 + LABEL_HEIGHT + self.BOTTOM_MARGIN
         )
         self.set_size(self.a_paper_scale((drawing_width, drawing_height)))
 

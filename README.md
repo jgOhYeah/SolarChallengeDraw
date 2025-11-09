@@ -3,11 +3,10 @@ A programme for generating and managing a double elimination draw for a model so
 This is a work in progress.
 
 
-
 ## Installation and setup.
 ### Prerequisites
 - Install the [python](https://www.python.org/) interpretor if not already installed (Tested with 3.12, minimum is 3.10).
-- To export PDFs, [Ghostscript](https://ghostscript.com/) is required.
+- To export PDFs, [Ghostscript](https://ghostscript.com/) is required. The downloads page is [here](https://www.ghostscript.com/releases/gsdnld.html).
 - A [git](https://git-scm.com/) client is highly recommended to download the code, perform version management and keep it up to date.
 - A text editor (like [vscode](https://code.visualstudio.com/)) is highly recommended.
 
@@ -26,8 +25,10 @@ This is a work in progress.
     ```bash
     python[3] -m venv .venv
     ```
-    > ![TIP]
-    > Depending on the operating system and computer, the python interpretor may either be known as `python` (common for Windows) or `python3` (common for Linux)
+
+> [!TIP]
+> Depending on the operating system and computer, the python interpretor may either be known as `python` (common for Windows) or `python3` (common for Linux). If python runs, but you have issues where libraries and modules cannot be found, try the other option.
+
 - Once the virtual environment has been created, it now needs to be activated so that the computer uses it instead of the system environment. The exact command varies between operating systems.
     - Windows command prompt:
         ```cmd
@@ -50,11 +51,12 @@ This is a work in progress.
     ```bash
     pip[3] install -r requirements.txt
     ```
-    > ![TIP]
-    > Again, this may be `pip` or `pip3` depending on the computer.
+
+> [!TIP]
+> Again, this may be `pip` or `pip3` depending on the computer.
 
 ### Running the programme
-> ![NOTE]
+> [!NOTE]
 > This is still a work in progress and will change.
 
 - If the terminal has been closed since the virtual environment was last activated, change working directory (`cd`) to the `SolarChallengeDraw` folder and activate it.
@@ -65,7 +67,7 @@ This is a work in progress.
     Where `database/cars.csv` is a csv file that contains a list of cars.
 
 ## Cars CSV file
-> ![NOTE]
+> [!NOTE]
 > This is still a work in progress and will change.
 
 For example:

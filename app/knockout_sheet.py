@@ -1,6 +1,7 @@
 """knockout_sheet.py
 Classes and tools to render a knockout event and export it as a PDF.
 Written by Jotham Gates, 09/11/2025"""
+
 from __future__ import annotations
 from enum import StrEnum
 import os
@@ -11,6 +12,7 @@ import numpy as np
 import ttkbootstrap as ttk
 import ttkbootstrap.constants as ttkc
 from knockout import KnockoutEvent, Podium, Race, RaceBranch
+
 
 class KnockoutSheet:
     """Class that draws and manages the knockout tree structure."""
@@ -265,8 +267,6 @@ class KnockoutSheet:
             if race_branch.branch_type != RaceBranch.BranchType.FIXED:
                 # Show a combobox (may need to be non-editable).
                 # Create a list of options for the menu.
-                current_var = tk.StringVar()
-
                 class StrFixedOptions(StrEnum):
                     EMPTY = ""
                     DNR = "DNR"
@@ -282,7 +282,7 @@ class KnockoutSheet:
                 )
 
                 def validate(selected: str) -> bool:
-                    """Validates the currently selected combobox and updates the races.
+                    """Validates the currently selected combobox.
 
                     Args:
                         selected (str): The currently selected value.
@@ -290,7 +290,11 @@ class KnockoutSheet:
                     Returns:
                         bool: Whether the option is valid.
                     """
-                    if selected in values:
+                    return selected in values
+
+                def update_races(selected: str) -> None:
+                    """Updates the race draw with a new winner for this number."""
+                    if validate(selected):
                         assert (
                             race_branch.prev_race is not None
                         ), "There should be a previous race to select values from."
@@ -306,22 +310,28 @@ class KnockoutSheet:
                         # TODO: Update instead of redrawing.
                         self.draw_canvas(event, show_seed, interactive)
                         event.print()
-                        return True
-                    else:
-                        # The user somehow put an invalid number in.
-                        return False
+
+                current_var = tk.StringVar()
+
+                def on_write(var: str, index: str, mode: str):
+                    """Called on the text variable being updated."""
+                    update_races(current_var.get())
 
                 combobox = ttk.Combobox(
                     self._frame,
                     values=values,
-                    validate="focusin",
+                    validate="all",
                     validatecommand=(self._frame.register(validate), "%P"),
+                    textvariable=current_var,
                     state=(ttkc.NORMAL if race_branch.is_editable() else ttkc.DISABLED),
                 )
 
                 # Show the current car if needed.
                 if race_branch.car is not None:
                     combobox.current(values.index(f"{race_branch.car.car_id}"))
+
+                # Add the trace after writing the initial value to the combobox.
+                current_var.trace_add("write", on_write)
 
                 self._canvas.create_window(
                     x,
@@ -882,6 +892,7 @@ class KnockoutSheet:
 
     def export(
         self,
+        ghostscript_path: str,
         output: str,
         pdf_width_mm: float,
         pdf_height_mm: float,
@@ -924,7 +935,7 @@ class KnockoutSheet:
                 return mm * 72 / 25.4
 
             args = [
-                "gs",  # actual value doesn't matter
+                ghostscript_path,
                 "-dNOPAUSE",
                 "-dBATCH",
                 "-dSAFER",

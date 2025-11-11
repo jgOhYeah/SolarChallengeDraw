@@ -13,7 +13,7 @@ options:
 Written by Jotham Gates, 2025.
 """
 import argparse
-
+import platform
 import gui
 import knockout
 import car
@@ -24,16 +24,41 @@ def get_arguments() -> argparse.Namespace:
         description="Tool to generate draws for the VMSVC Don Sheridan Kit Car Challenge.",
         epilog="Written by Jotham Gates, 2025.",
     )
-    # parser.add_argument(
-    #     "database",
-    #     type=str,
-    #     default="../database/SolarChallengeDraw.sqlite",
-    #     help="The path to the sqlite database to use to store and process the data.",
-    # )
     parser.add_argument(
         "-c", "--cars", type=str, default=None, help="CSV file containing cars to load."
     )
+    parser.add_argument(
+        "-g",
+        "--ghostscript",
+        default=None,
+        help="The name / path to the Ghostscript installation. This is required for exporting PDFs. On Linux and macOS this defaults to `gs`. On Windows this defaults to `gswin64c.exe`.",
+    )
     return parser.parse_args()
+
+
+def ghostscript_location(provided: str | None) -> str:
+    """Returns the name of the Ghostscript binary depending on the operating system and what is provided.
+
+    Args:
+        provided (str | None): The provided entry.
+
+    Returns:
+        str: Path / filename for Ghostscript.
+    """
+    if provided is None:
+        # Need to guess what the programme is called.
+        match platform.system():
+            case "Windows":
+                return "gswin64c.exe"
+            case "Linux" | "Darwin":
+                return "gs"
+            case _:
+                message = "The operating system isn't known. Please explicitely provide the name / path for Ghostscript."
+                print(message)
+                raise ValueError(message)
+    else:
+        # Use what was provided.
+        return provided
 
 
 if __name__ == "__main__":
@@ -41,6 +66,6 @@ if __name__ == "__main__":
     cars = car.load_cars(args.cars)
     knockout_event = knockout.KnockoutEvent(cars, "Test event")
     knockout_event.print()
-    gui_ui = gui.Gui()
+    gui_ui = gui.Gui(ghostscript_location(args.ghostscript))
     gui_ui.knockout._sheet.draw_canvas(knockout_event)
     gui_ui.run()

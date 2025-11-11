@@ -11,6 +11,7 @@ import ttkbootstrap.tableview as tableview
 from abc import ABC, abstractmethod
 import datetime
 from knockout_sheet import KnockoutSheet
+from file_picker import FilePicker
 
 
 class AppTab(ABC):
@@ -80,9 +81,17 @@ class RoundRobinTab(AppTab):
 class KnockoutTab(AppTab):
     """Class to handle the knockout round tab."""
 
-    def __init__(self, root: ttk.Notebook) -> None:
+    def __init__(self, root: ttk.Notebook, ghostscript_path: str) -> None:
         super().__init__(root, "Knockout")
+        self._ghostscript_path = ghostscript_path
         self.create_title_bar()
+        self._export_pdf_filename = FilePicker(
+            default_extension=".pdf",
+            filetypes=(("PDF files", "*.pdf"),),
+            initial_dir="./",
+            initial_file="knockout_draw.pdf",
+            title="Select a location to save the knockout draw",
+        )
         self._sheet = KnockoutSheet(self._frame, 1, 0)
 
     class PaperSizes(Enum):
@@ -102,26 +111,28 @@ class KnockoutTab(AppTab):
 
     def _export_pdf(self) -> None:
         """Exports the sheet."""
-        filename = "output.pdf"
-        paper_size = KnockoutTab.PaperSizes.A3
-        self._sheet.export(
-            filename,
-            paper_size.value[0],
-            paper_size.value[1],
-            save_ps=False,
-            generate_pdf=True,
-        )
+        filename = self._export_pdf_filename.request()
+        if filename is not None:
+            paper_size = KnockoutTab.PaperSizes.A3
+            self._sheet.export(
+                ghostscript_path=self._ghostscript_path,
+                output=filename,
+                pdf_width_mm=paper_size.value[0],
+                pdf_height_mm=paper_size.value[1],
+                save_ps=False,
+                generate_pdf=True,
+            )
 
 
 class Gui:
-    def __init__(self) -> None:
+    def __init__(self, ghostscript_path: str) -> None:
         self._root = ttk.Window(title="Solar car draw generator", themename="cosmo")
         # self._root = tk.Tk()
         notebook = ttk.Notebook(self._root)
         # self._events = EventsTab(notebook)
         # self._cars = CarsTab(notebook)
         # self._round_robin = RoundRobinTab(notebook)
-        self.knockout = KnockoutTab(notebook)
+        self.knockout = KnockoutTab(notebook, ghostscript_path)
         notebook.pack(expand=True, fill=ttkc.BOTH)
 
     def run(self) -> None:

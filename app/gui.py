@@ -10,7 +10,12 @@ import ttkbootstrap.constants as ttkc
 import ttkbootstrap.tableview as tableview
 from abc import ABC, abstractmethod
 import datetime
-from knockout_sheet import KnockoutSheet
+from knockout import KnockoutEvent
+from knockout_sheet import (
+    InteractiveNumberBoxFactory,
+    KnockoutSheet,
+    PrintNumberBoxFactory,
+)
 from file_picker import FilePicker
 
 
@@ -92,7 +97,14 @@ class KnockoutTab(AppTab):
             initial_file="knockout_draw.pdf",
             title="Select a location to save the knockout draw",
         )
-        self._sheet = KnockoutSheet(self._frame, 1, 0)
+        # Create one canvas for display and another for printing with the different number entry boxes.
+        self._gui_sheet = KnockoutSheet(self._frame, 1, 0)
+        self._print_sheet = KnockoutSheet(self._frame, None, None)
+
+    def draw_event(self, event: KnockoutEvent) -> None:
+        """Draws the event on screen and in the print canvas."""
+        self._gui_sheet.draw_canvas(event, InteractiveNumberBoxFactory())
+        self._print_sheet.draw_canvas(event, PrintNumberBoxFactory())
 
     class PaperSizes(Enum):
         """List of paper sizes in mm. Note that the aspect ration is currently always set for ISO A paper."""
@@ -114,7 +126,8 @@ class KnockoutTab(AppTab):
         filename = self._export_pdf_filename.request()
         if filename is not None:
             paper_size = KnockoutTab.PaperSizes.A3
-            self._sheet.export(
+            self._print_sheet.update()  # We only need to update the print sheet right before printing.
+            self._print_sheet.export(
                 ghostscript_path=self._ghostscript_path,
                 output=filename,
                 pdf_width_mm=paper_size.value[0],

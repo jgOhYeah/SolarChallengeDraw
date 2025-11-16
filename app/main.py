@@ -14,6 +14,7 @@ Written by Jotham Gates, 2025.
 """
 import argparse
 import platform
+from knockout_sheet import InteractiveNumberBoxFactory, PrintNumberBoxFactory
 import gui
 import knockout
 import car
@@ -67,5 +68,5 @@ if __name__ == "__main__":
     knockout_event = knockout.KnockoutEvent(cars, "Test event")
     knockout_event.print()
     gui_ui = gui.Gui(ghostscript_location(args.ghostscript))
-    gui_ui.knockout._sheet.draw_canvas(knockout_event)
+    gui_ui.knockout.draw_event(knockout_event)
     gui_ui.run()

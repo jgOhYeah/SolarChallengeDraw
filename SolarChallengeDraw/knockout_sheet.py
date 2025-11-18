@@ -12,7 +12,7 @@ from typing import List, Literal, Tuple, cast
 import numpy as np
 import ttkbootstrap as ttk
 import ttkbootstrap.constants as ttkc
-from knockout import KnockoutEvent, Podium, Race, RaceBranch
+from knockout import BranchResult, KnockoutEvent, Podium, Race, RaceBranch, BranchType
 
 # Settings
 LEFT_MARGIN = 10
@@ -302,7 +302,7 @@ class NumberBoxFactory(ABC):
         race_branch: RaceBranch,
         sheet: KnockoutSheet,
     ) -> NumberBox:
-        if race_branch.branch_type != RaceBranch.BranchType.FIXED:
+        if race_branch.branch_type != BranchType.FIXED:
             return self._create_not_fixed(canvas, x, y, race_branch, sheet)
         else:
             return InitialNumberBox(canvas, x, y, race_branch, sheet)
@@ -574,7 +574,7 @@ class KnockoutSheet:
             show_label = False
             text = ""
             match race_branch.branch_result():
-                case RaceBranch.BranchResult.WINNER:
+                case BranchResult.WINNER:
                     if (
                         race_branch.prev_race is not None
                         and race_branch.prev_race.winner_show_label
@@ -586,7 +586,7 @@ class KnockoutSheet:
                         show_label = True
                         text = "Winner"
 
-                case RaceBranch.BranchResult.LOSER:
+                case BranchResult.LOSER:
                     if (
                         race_branch.prev_race is not None
                         and race_branch.prev_race.loser_show_label
@@ -811,7 +811,7 @@ class KnockoutSheet:
             """
             # Draw the box and title.
             BOX_PADDING = 20
-            BOX_FILL = "#cff9f3"
+            BOX_FILL = "#CFF9F3"
             TEXT_FILL = "#1E7B6D"
             box_centre = x_end - HORIZONTAL_LINE_LENGTH - TEXT_MARGIN
             box_half_width = HORIZONTAL_LINE_LENGTH + TEXT_MARGIN + BOX_PADDING

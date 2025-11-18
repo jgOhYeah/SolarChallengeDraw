@@ -5,11 +5,43 @@ Written by Jotham Gates, 21/10/2025"""
 from __future__ import annotations
 from abc import ABC
 from dataclasses import dataclass
-from enum import Enum, StrEnum, auto
+from enum import Enum, IntEnum, StrEnum, auto
 from typing import Iterable, List, Tuple, cast
 import numpy as np
 from car import Car
 from abc import ABC, abstractmethod
+
+
+class BranchType(Enum):
+    """Represents the type of the branch and whether the value should be edited."""
+
+    FIXED = (
+        auto()
+    )  # Used for the initial round where the competitors are fixed (not editable).
+    DEPENDENT_EDITABLE = (
+        auto()
+    )  # This branch depends on a previous race and may be edited.
+    DEPENDENT_NOT_EDITABLE = (
+        auto()
+    )  # This branch depends on a previous race, but may not be edited.
+
+
+class FillProbability(IntEnum):
+    """Enum that represents the probability of a branch having a competitor in it."""
+
+    IMPOSSIBLE = auto()
+    UNLIKELY = auto()
+    LIKELY = auto()
+    GUARANEED = auto()
+    UNKOWN = auto()
+
+
+class BranchResult(Enum):
+    """Represents if a branch is the result of a win or a lose from the previous race."""
+
+    NEITHER = auto()
+    WINNER = auto()
+    LOSER = auto()
 
 
 @dataclass
@@ -20,30 +52,11 @@ class RaceBranch:
     branch_type: BranchType
     prev_race: Race | None = None
     car: Car | None = None
-
-    class BranchType(Enum):
-        """Represents the type of the branch and whether the value should be edited."""
-
-        FIXED = (
-            auto()
-        )  # Used for the initial round where the competitors are fixed (not editable).
-        DEPENDENT_EDITABLE = (
-            auto()
-        )  # This branch depends on a previous race and may be edited.
-        DEPENDENT_NOT_EDITABLE = (
-            auto()
-        )  # This branch depends on a previous race, but may not be edited.
-
-    class BranchResult(Enum):
-        """Represents if a branch is the result of a win or a lose from the previous race."""
-
-        NEITHER = auto()
-        WINNER = auto()
-        LOSER = auto()
+    filled: bool = False
 
     def is_editable(self) -> bool:
         """Checks if the race branch is editable."""
-        ok_type = self.branch_type == RaceBranch.BranchType.DEPENDENT_EDITABLE
+        ok_type = self.branch_type == BranchType.DEPENDENT_EDITABLE
         winner_race_undecided = True
         loser_race_undecided = True
         all_competitors_available = True
@@ -71,15 +84,46 @@ class RaceBranch:
             and self.prev_race.loser_next_race is not None
             and self in self.prev_race.loser_next_race.get_branches(self.prev_race)
         ):
-            return RaceBranch.BranchResult.LOSER
+            return BranchResult.LOSER
         elif (
             self.prev_race is not None
             and self.prev_race.winner_next_race is not None
             and self in self.prev_race.winner_next_race.get_branches(self.prev_race)
         ):
-            return RaceBranch.BranchResult.WINNER
+            return BranchResult.WINNER
         else:
-            return RaceBranch.BranchResult.NEITHER
+            return BranchResult.NEITHER
+
+    def fill_probability(self) -> FillProbability:
+        """Works out the probability that the branch has a competitor in it."""
+        if self.filled:
+            # When filled in or the initial round are the only times we can state with certainty.
+            if self.car is None:
+                return FillProbability.IMPOSSIBLE
+            else:
+                return FillProbability.GUARANEED
+        else:
+            # Depends on a previous round.
+            match self.branch_result():
+                case BranchResult.WINNER:
+                    # Branch will always be filled except in the event of a DNR.
+                    return FillProbability.LIKELY
+                case BranchResult.LOSER:
+                    # Branch is likely to be filled if there is more than one competitor in the previous race.
+                    assert (
+                        self.prev_race is not None
+                    ), "We should have already handled the initial round."
+                    if (
+                        self.prev_race.get_expected_competitors(FillProbability.LIKELY)
+                        == 2
+                    ):
+                        # Both competitors are likely to be filled, so we will probably have a loser.
+                        return FillProbability.LIKELY
+                    else:
+                        # Not likely.
+                        return FillProbability.UNLIKELY
+                case _:
+                    assert False, "There is another result type???"
 
 
 class Winnable(ABC):
@@ -112,8 +156,8 @@ class Winnable(ABC):
         pass
 
     @abstractmethod
-    def get_expected_competitors(self) -> int:
-        """Returns the number of competitors expected. This may be 1 for a bye or podium and 2 for a race."""
+    def get_expected_competitors(self, min_fill_probability: FillProbability) -> int:
+        """Returns the number of competitors expected with at least the given fill probability. This may be 1 for a bye or podium and 2 for a race."""
         pass
 
     def has_competitors(
@@ -134,17 +178,15 @@ class Winnable(ABC):
             bool: If the required number of competitors for the provided previous race
         """
         branches = self.get_branches(filter_prev_race)
-        count = 0
         for b in branches:
-            if b.car is not None:
-                count += 1
+            if b.filled and check_any:
+                return True
 
-        result = (
-            # When we don't need the exact number of competitors.
-            count > 0
-            and (check_any or filter_prev_race is not None)
-        ) or count == self.get_expected_competitors()  # Exact required.
-        return result
+            if not b.filled and not check_any:
+                return False
+
+        # We got to the end and all are filled if they need to be or none are.
+        return not check_any
 
     @abstractmethod
     def is_result_decided(self) -> bool:
@@ -166,7 +208,7 @@ class Podium(Winnable):
         self.position = position
         self.branch: RaceBranch = RaceBranch(
             seed=position,
-            branch_type=RaceBranch.BranchType.DEPENDENT_EDITABLE,
+            branch_type=BranchType.DEPENDENT_EDITABLE,
             prev_race=prev_race,
             car=car,
         )
@@ -184,7 +226,7 @@ class Podium(Winnable):
             # Invalid previous race.
             raise ValueError("The provided previous race is not linked to this podium.")
 
-    def get_expected_competitors(self) -> int:
+    def get_expected_competitors(self, min_fill_probability: FillProbability) -> int:
         return 1
 
     def is_result_decided(self) -> bool:
@@ -287,9 +329,7 @@ class Race(Winnable):
 
         def branch_fixed_empty(branch: RaceBranch) -> bool:
             """Checks if a branch is fixed as empty."""
-            return (
-                branch.branch_type == RaceBranch.BranchType.FIXED and branch.car is None
-            )
+            return branch.branch_type == BranchType.FIXED and branch.car is None
 
         return (
             # Bye in the first round.
@@ -377,15 +417,15 @@ class Race(Winnable):
         Raises:
             ValueError: If the provided previous race is not actually a previous race.
         """
-        if prev_race is self.left_branch.prev_race:
-            self.left_branch.car = competitor
-        elif prev_race is self.right_branch.prev_race:
-            self.right_branch.car = competitor
-        else:
-            raise ValueError(f"Race {prev_race} is not a previous race of race {self}.")
+        branch = self.get_branches(prev_race)
+        assert len(branch) == 1, "Should only be 1 branch returned."
+        branch[0].car = competitor
+        branch[0].filled = competitor is not None # TODO: Update when DNR.
 
-    def get_expected_competitors(self) -> int:
-        return 1 if self.is_bye() else 2
+    def get_expected_competitors(self, min_fill_probability: FillProbability) -> int:
+        return int(self.left_branch.fill_probability() >= min_fill_probability) + int(
+            self.right_branch.fill_probability() >= min_fill_probability
+        )
 
     def is_result_decided(self):
         """Checks if the result for the current race is decided."""
@@ -431,11 +471,11 @@ def add_round(next_round: List[Race]) -> List[Race]:
         high_seed = next_round_race.theoretical_winner().seed
         left_race = Race(
             left_branch=RaceBranch(
-                seed=high_seed, branch_type=RaceBranch.BranchType.DEPENDENT_EDITABLE
+                seed=high_seed, branch_type=BranchType.DEPENDENT_EDITABLE
             ),
             right_branch=RaceBranch(
                 seed=seed_pair(high_seed),
-                branch_type=RaceBranch.BranchType.DEPENDENT_EDITABLE,
+                branch_type=BranchType.DEPENDENT_EDITABLE,
             ),
             winner_next_race=next_round_race,
             loser_show_label=True,
@@ -448,11 +488,11 @@ def add_round(next_round: List[Race]) -> List[Race]:
         right_race = Race(
             left_branch=RaceBranch(
                 seed=low_seed,
-                branch_type=RaceBranch.BranchType.DEPENDENT_EDITABLE,
+                branch_type=BranchType.DEPENDENT_EDITABLE,
             ),
             right_branch=RaceBranch(
                 seed=seed_pair(low_seed),
-                branch_type=RaceBranch.BranchType.DEPENDENT_EDITABLE,
+                branch_type=BranchType.DEPENDENT_EDITABLE,
             ),
             winner_next_race=next_round_race,
             loser_show_label=True,
@@ -467,12 +507,10 @@ def create_empty_draw(competitors: int) -> List[List[Race]]:
     """Creates an empty single elimination draw with optimal seeding."""
     rounds = int(np.ceil(np.log2(competitors)))
     single_elim_final = Race(
-        left_branch=RaceBranch(
-            seed=1, branch_type=RaceBranch.BranchType.DEPENDENT_EDITABLE
-        ),
+        left_branch=RaceBranch(seed=1, branch_type=BranchType.DEPENDENT_EDITABLE),
         right_branch=RaceBranch(
             seed=2,
-            branch_type=RaceBranch.BranchType.DEPENDENT_EDITABLE,
+            branch_type=BranchType.DEPENDENT_EDITABLE,
         ),
         loser_show_label=True,
     )
@@ -498,12 +536,12 @@ def add_first_losers(winning_round1: List[Race]) -> List[Race]:
         race = Race(
             left_branch=RaceBranch(
                 seed=winning_round1[i].theoretical_loser().seed,
-                branch_type=RaceBranch.BranchType.DEPENDENT_NOT_EDITABLE,
+                branch_type=BranchType.DEPENDENT_NOT_EDITABLE,
                 prev_race=winning_round1[i],
             ),
             right_branch=RaceBranch(
                 seed=winning_round1[i + 1].theoretical_loser().seed,
-                branch_type=RaceBranch.BranchType.DEPENDENT_NOT_EDITABLE,
+                branch_type=BranchType.DEPENDENT_NOT_EDITABLE,
                 prev_race=winning_round1[i + 1],
             ),
         )
@@ -536,12 +574,12 @@ def add_repecharge(
         race = Race(
             left_branch=RaceBranch(
                 seed=winner_race.theoretical_loser().seed,
-                branch_type=RaceBranch.BranchType.DEPENDENT_NOT_EDITABLE,
+                branch_type=BranchType.DEPENDENT_NOT_EDITABLE,
                 prev_race=winner_race,
             ),
             right_branch=RaceBranch(
                 seed=loser_race.theoretical_winner().seed,
-                branch_type=RaceBranch.BranchType.DEPENDENT_EDITABLE,
+                branch_type=BranchType.DEPENDENT_EDITABLE,
                 prev_race=loser_race,
             ),
         )
@@ -560,12 +598,12 @@ def forward_knockout(prev_round: List[Race]) -> List[Race]:
         race = Race(
             left_branch=RaceBranch(
                 seed=prev_round[i].theoretical_winner().seed,
-                branch_type=RaceBranch.BranchType.DEPENDENT_EDITABLE,
+                branch_type=BranchType.DEPENDENT_EDITABLE,
                 prev_race=prev_round[i],
             ),
             right_branch=RaceBranch(
                 seed=prev_round[i + 1].theoretical_winner().seed,
-                branch_type=RaceBranch.BranchType.DEPENDENT_EDITABLE,
+                branch_type=BranchType.DEPENDENT_EDITABLE,
                 prev_race=prev_round[i + 1],
             ),
         )
@@ -611,9 +649,11 @@ def assign_cars(cars: List[Car], first_round: List[Race]) -> None:
 
     for race in first_round:
         race.left_branch.car = sorted_cars[race.left_branch.seed - 1]
-        race.left_branch.branch_type = RaceBranch.BranchType.FIXED
+        race.left_branch.branch_type = BranchType.FIXED
+        race.left_branch.filled = True
         race.right_branch.car = sorted_cars[race.right_branch.seed - 1]
-        race.right_branch.branch_type = RaceBranch.BranchType.FIXED
+        race.right_branch.branch_type = BranchType.FIXED
+        race.right_branch.filled = True
 
 
 def add_grand_final(
@@ -626,12 +666,12 @@ def add_grand_final(
     grand_final = Race(
         left_branch=RaceBranch(
             seed=winners_final.theoretical_winner().seed,
-            branch_type=RaceBranch.BranchType.DEPENDENT_EDITABLE,
+            branch_type=BranchType.DEPENDENT_EDITABLE,
             prev_race=winners_final,
         ),
         right_branch=RaceBranch(
             seed=losers_final.theoretical_winner().seed,
-            branch_type=RaceBranch.BranchType.DEPENDENT_EDITABLE,
+            branch_type=BranchType.DEPENDENT_EDITABLE,
             prev_race=losers_final,
         ),
         winner_next_race=Podium(1),

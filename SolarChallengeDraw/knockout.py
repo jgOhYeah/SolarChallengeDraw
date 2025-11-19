@@ -128,7 +128,9 @@ class RaceBranch:
 
 class Winnable(ABC):
     @abstractmethod
-    def update_from_prev_race(self, prev_race: Race, competitor: Car | None) -> None:
+    def update_from_prev_race(
+        self, prev_race: Race, competitor: Car | None, filled: bool
+    ) -> None:
         """Updates the competitors / result of this event based on the previous race.
 
         Args:
@@ -213,8 +215,11 @@ class Podium(Winnable):
             car=car,
         )
 
-    def update_from_prev_race(self, prev_race: Race, competitor: Car | None) -> None:
+    def update_from_prev_race(
+        self, prev_race: Race, competitor: Car | None, filled: bool
+    ) -> None:
         self.branch.car = competitor
+        self.branch.filled = filled
 
     def get_branches(
         self, filter_prev_race: Race | None = None
@@ -375,6 +380,7 @@ class Race(Winnable):
         # Default is clearing the winners and losers.
         winner = None
         loser = None
+        filled = True
         if car_number == self.WINNER_DNR:
             # Both failed to run. # TODO: Handle
             raise NotImplementedError("DNR is not implemented yet.")
@@ -394,7 +400,7 @@ class Race(Winnable):
             loser = self.left_branch.car
         elif car_number == self.WINNER_EMPTY:
             # Reset back to empty.
-            pass
+            filled = False
         else:
             # Unrecognised car.
             raise ValueError(
@@ -403,11 +409,13 @@ class Race(Winnable):
 
         # Propagate the result.
         if self.winner_next_race is not None:
-            self.winner_next_race.update_from_prev_race(self, winner)
+            self.winner_next_race.update_from_prev_race(self, winner, filled)
         if self.loser_next_race is not None:
-            self.loser_next_race.update_from_prev_race(self, loser)
+            self.loser_next_race.update_from_prev_race(self, loser, filled)
 
-    def update_from_prev_race(self, prev_race: Race, competitor: Car | None) -> None:
+    def update_from_prev_race(
+        self, prev_race: Race, competitor: Car | None, filled: bool
+    ) -> None:
         """Sets a competitor of a current race based on updating the previous race.
 
         Args:
@@ -420,7 +428,7 @@ class Race(Winnable):
         branch = self.get_branches(prev_race)
         assert len(branch) == 1, "Should only be 1 branch returned."
         branch[0].car = competitor
-        branch[0].filled = competitor is not None # TODO: Update when DNR.
+        branch[0].filled = filled
 
     def get_expected_competitors(self, min_fill_probability: FillProbability) -> int:
         return int(self.left_branch.fill_probability() >= min_fill_probability) + int(

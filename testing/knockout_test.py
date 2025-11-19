@@ -132,6 +132,49 @@ class TestRace(unittest.TestCase):
             "Loser race, right branch should not be editable.",
         )
 
+        next_loser_race = Race(
+            left_branch=RaceBranch(3, BranchType.DEPENDENT_EDITABLE, winner_race),
+            right_branch=RaceBranch(4, BranchType.DEPENDENT_EDITABLE, loser_race),
+        )
+        winner_race.loser_next_race = next_loser_race
+        loser_race.winner_next_race = next_loser_race
+
+        self.assertFalse(
+            next_loser_race.left_branch.is_editable(),
+            "This race should not be editable without cars.",
+        )
+        self.assertFalse(
+            next_loser_race.right_branch.is_editable(),
+            "This race should not be editable without cars.",
+        )
+
+        # Add some winners.
+        assert (
+            left_race.left_branch.car is not None
+            and right_race.left_branch.car is not None
+        ), "Initial competitors incorrect."
+        left_race.set_winner(left_race.left_branch.car.car_id)
+        right_race.set_winner(right_race.left_branch.car.car_id)
+        # assert (
+        #     winner_race.left_branch.car is not None and loser_race.left_branch.car is not None
+        # ), "Set_winner failed"
+        # winner_race.set_winner(winner_race.left_branch.car.car_id)
+        # loser_race.set_winner(loser_race.left_branch.car.car_id)
+
+        print(left_race, right_race)
+        print(winner_race, loser_race)
+        print(next_loser_race)
+
+        # Now check if editable
+        self.assertTrue(
+            next_loser_race.left_branch.is_editable(),
+            "Result of a normal race should be editable.",
+        )
+        self.assertTrue(
+            next_loser_race.right_branch.is_editable(),
+            "Result of a bye should be editable.",
+        )
+
     def test_has_competitors(self):
         left_race, right_race, winner_race, loser_race = self.create_4_races_with_bye()
         self.assertTrue(left_race.has_competitors(), "Initial should have competitors.")
@@ -237,4 +280,6 @@ class TestRace(unittest.TestCase):
 #             right_branch=RaceBranch(2, BranchType.DEPENDENT_EDITABLE, prev_race=None)
 #         )
 if __name__ == "__main__":
+    # race = TestRace()
+    # race.test_is_editable()
     unittest.main()

@@ -62,7 +62,7 @@ This is a work in progress.
 - If the terminal has been closed since the virtual environment was last activated, change working directory (`cd`) to the `SolarChallengeDraw` folder and activate it.
 - Run the tool using:
     ```bash
-    python[3] ./app/main.py --cars=database/cars.csv
+    python[3] SolarChallengeDraw --cars=database/cars.csv
     ```
     Where `database/cars.csv` is a csv file that contains a list of cars.
 
@@ -72,9 +72,9 @@ This is a work in progress.
 
 For example:
 
-| Car ID | School ID | Car name | Scruitineered | Present for round robin | Present for knockout | Points |
-|:-:|:-:| - |:-:| - | - | - |
-| 401 | 1 | School 1, car 401 | | | | 1 |
-| 402 | 1 | School 1, car 402 | | | | 3 |
-| 403 | 2 | School 2, car 403 | | | | 2 |
-| 404 | 3 | School 3, car 404 | | | | 1 |
+| Car ID | School ID | Car name          | Scruitineered | Present for round robin | Present for knockout | Points |
+| :----: | :-------: | ----------------- | :-----------: | ----------------------- | -------------------- | ------ |
+|  401   |     1     | School 1, car 401 |               |                         |                      | 1      |
+|  402   |     1     | School 1, car 402 |               |                         |                      | 3      |
+|  403   |     2     | School 2, car 403 |               |                         |                      | 2      |
+|  404   |     3     | School 3, car 404 |               |                         |                      | 1      |

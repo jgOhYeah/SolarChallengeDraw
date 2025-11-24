@@ -32,7 +32,7 @@ class FillProbability(IntEnum):
     IMPOSSIBLE = auto()
     UNLIKELY = auto()
     LIKELY = auto()
-    GUARANEED = auto()
+    GUARANTEED = auto()
     UNKOWN = auto()
 
 
@@ -101,7 +101,7 @@ class RaceBranch:
             if self.car is None:
                 return FillProbability.IMPOSSIBLE
             else:
-                return FillProbability.GUARANEED
+                return FillProbability.GUARANTEED
         else:
             # Depends on a previous round.
             match self.branch_result():
@@ -323,27 +323,29 @@ class Race(Winnable):
             bool: True when the race is a bye.
         """
 
-        def this_branch_relies_on_a_bye_loser(branch: RaceBranch) -> bool:
-            """Checks if the given branch is fed from the loser of a bye (won't be populated)."""
-            # TODO: This will be populated in the event that the car in the previous race does not run.
-            return (
-                branch.prev_race is not None
-                and branch.prev_race.is_bye()
-                and branch.prev_race.loser_next_race is self
-            )
+        # def this_branch_relies_on_a_bye_loser(branch: RaceBranch) -> bool:
+        #     """Checks if the given branch is fed from the loser of a bye (won't be populated)."""
+        #     # TODO: This will be populated in the event that the car in the previous race does not run.
+        #     return (
+        #         branch.prev_race is not None
+        #         and branch.prev_race.is_bye()
+        #         and branch.prev_race.loser_next_race is self
+        #     )
 
-        def branch_fixed_empty(branch: RaceBranch) -> bool:
-            """Checks if a branch is fixed as empty."""
-            return branch.branch_type == BranchType.FIXED and branch.car is None
+        # def branch_fixed_empty(branch: RaceBranch) -> bool:
+        #     """Checks if a branch is fixed as empty."""
+        #     return branch.branch_type == BranchType.FIXED and branch.car is None
 
-        return (
-            # Bye in the first round.
-            branch_fixed_empty(self.left_branch)
-            or branch_fixed_empty(self.right_branch)
-            # Bye because of a previous round.
-            or this_branch_relies_on_a_bye_loser(self.left_branch)
-            or this_branch_relies_on_a_bye_loser(self.right_branch)
-        )
+        # return (
+        #     # Bye in the first round.
+        #     branch_fixed_empty(self.left_branch)
+        #     or branch_fixed_empty(self.right_branch)
+        #     # Bye because of a previous round.
+        #     or this_branch_relies_on_a_bye_loser(self.left_branch)
+        #     or this_branch_relies_on_a_bye_loser(self.right_branch)
+        # )
+
+        return self.get_expected_competitors(FillProbability.UNLIKELY) == 1
 
     WINNER_EMPTY = -1
     WINNER_DNR = -2

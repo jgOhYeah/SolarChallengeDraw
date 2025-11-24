@@ -8,11 +8,19 @@ from enum import StrEnum
 import os
 import subprocess
 import tkinter as tk
-from typing import List, Literal, Tuple, cast
+from typing import Iterable, List, Literal, Tuple, cast
 import numpy as np
 import ttkbootstrap as ttk
 import ttkbootstrap.constants as ttkc
-from knockout import BranchResult, KnockoutEvent, Podium, Race, RaceBranch, BranchType
+from knockout import (
+    BranchResult,
+    FillProbability,
+    KnockoutEvent,
+    Podium,
+    Race,
+    RaceBranch,
+    BranchType,
+)
 
 # Settings
 LEFT_MARGIN = 10
@@ -332,6 +340,126 @@ class PrintNumberBoxFactory(NumberBoxFactory):
         return PrintNumberBox(canvas, x, y, race_branch, sheet)
 
 
+class BracketLineSet(ABC):
+    """Class for bracket lines."""
+
+    def __init__(
+        self, canvas: ttk.Canvas, x_tee_start: float, x_end: float, y_centre: float
+    ) -> None:
+        # The line from the tee (or start for a bye) to the end.
+        self._tee_line = canvas.create_line(
+            x_tee_start, y_centre, x_end, y_centre, width=BRACKET_LINE_THICKNESS
+        )
+        self.update(canvas)
+
+    @abstractmethod
+    def update(self, canvas: ttk.Canvas) -> None:
+        """Updates the line styles depending on the probability that the line will be needed."""
+        pass
+
+    def _update_line(
+        self, canvas: ttk.Canvas, lines: Iterable[int], probability: FillProbability
+    ) -> None:
+        """Updates the tee line with the probability that 2 lines are filled."""
+        dash: tuple
+        outline: str
+        match probability:
+            case FillProbability.IMPOSSIBLE:
+                # canvas.itemconfigure(line, dash=(10))
+                dash = (1, 2)
+                outline = "#A5A5A5"
+
+            case FillProbability.UNLIKELY:
+                dash = (3, 3)
+                outline = "#000000"
+
+            case (
+                FillProbability.LIKELY | FillProbability.GUARANTEED | FillProbability.UNKOWN
+            ):
+                dash = ()
+                outline = "#000000"
+            
+            case _:
+                raise ValueError("???")
+
+        for line in lines:
+            canvas.itemconfigure(line, dash=dash, fill=outline)
+
+
+class BracketLineSetNormal(BracketLineSet):
+    def __init__(
+        self,
+        canvas: ttk.Canvas,
+        x_start: float,
+        x_end: float,
+        y_centre: float,
+        race_branches: Tuple[RaceBranch, RaceBranch],
+        y_separation: float,
+    ) -> None:
+        self._branches = race_branches
+        # Line from the right side of the bracket to the end.
+        tee_x = x_end - HORIZONTAL_LINE_LENGTH
+
+        # Top lines
+        top_y = y_centre - y_separation / 2
+        self._top_lines = (
+            canvas.create_line(
+                x_start, top_y, tee_x, top_y, width=BRACKET_LINE_THICKNESS
+            ),
+            canvas.create_line(
+                tee_x, top_y, tee_x, y_centre, width=BRACKET_LINE_THICKNESS
+            ),
+        )
+
+        # Bottom lines
+        bottom_y = y_centre + y_separation / 2
+        self._bottom_lines = (
+            canvas.create_line(
+                x_start, bottom_y, tee_x, bottom_y, width=BRACKET_LINE_THICKNESS
+            ),
+            canvas.create_line(
+                tee_x, y_centre, tee_x, bottom_y, width=BRACKET_LINE_THICKNESS
+            ),
+        )
+
+        super().__init__(canvas, tee_x, x_end, y_centre)
+
+    def update(self, canvas: ttk.Canvas) -> None:
+        # Tee line
+        self._update_line(
+            canvas,
+            (self._tee_line,),
+            max(
+                self._branches[0].fill_probability(),
+                self._branches[1].fill_probability(),
+            ),
+        )
+
+        # Top
+        self._update_line(canvas, self._top_lines, self._branches[0].fill_probability())
+
+        # Bottom
+        self._update_line(
+            canvas, self._bottom_lines, self._branches[1].fill_probability()
+        )
+
+
+class BracketLineSetBye(BracketLineSet):
+    def __init__(
+        self,
+        canvas: ttk.Canvas,
+        x_start: float,
+        x_end: float,
+        y_centre: float,
+        race_branch: RaceBranch,
+    ) -> None:
+        self._branch = race_branch
+        super().__init__(canvas, x_start, x_end, y_centre)
+
+    def update(self, canvas: ttk.Canvas) -> None:
+        self._update_line(canvas, (self._tee_line,), self._branch.fill_probability())
+
+
 class KnockoutSheet:
     """Class that draws and manages the knockout tree structure."""
 
@@ -346,6 +474,7 @@ class KnockoutSheet:
         self._height = 210 * SCALE
         self._canvas = ttk.Canvas(self._frame, width=self._width, height=self._height)
         self._number_boxes: List[NumberBox] = []
+        self._lines: List[BracketLineSet] = []
 
         # Add to the screen.
         if start_row is not None and start_column is not None:
@@ -537,25 +666,6 @@ class KnockoutSheet:
     ) -> None:
         """Draws the tree of the knockout event on the canvas."""
 
-        def draw_bracket_lines(
-            x_start: float, x_end: float, y_centre: float, y_separation: float
-        ) -> None:
-            top_y = y_centre - y_separation / 2
-            tee_x = x_end - HORIZONTAL_LINE_LENGTH
-            self._canvas.create_line(
-                x_start, top_y, tee_x, top_y, width=BRACKET_LINE_THICKNESS
-            )
-            bottom_y = y_centre + y_separation / 2
-            self._canvas.create_line(
-                x_start, bottom_y, tee_x, bottom_y, width=BRACKET_LINE_THICKNESS
-            )
-            self._canvas.create_line(
-                tee_x, top_y, tee_x, bottom_y, width=BRACKET_LINE_THICKNESS
-            )
-            self._canvas.create_line(
-                tee_x, y_centre, x_end, y_centre, width=BRACKET_LINE_THICKNESS
-            )
-
         def draw_number(x: float, y: float, race_branch: RaceBranch) -> None:
             # Draw the seed.
             if show_seed:
@@ -716,11 +826,15 @@ class KnockoutSheet:
                     bottom_y,
                     race.right_branch,
                 )
-                draw_bracket_lines(
-                    bracket_x_start,
-                    bracket_x_end,
-                    y_centre,
-                    y_spacing,
+                self._lines.append(
+                    BracketLineSetNormal(
+                        self._canvas,
+                        bracket_x_start,
+                        bracket_x_end,
+                        y_centre,
+                        (race.left_branch, race.right_branch),
+                        y_spacing,
+                    )
                 )
                 draw_race_number(ttkc.E)
 
@@ -731,12 +845,14 @@ class KnockoutSheet:
                     y_centre,
                     race.theoretical_winner(),
                 )
-                self._canvas.create_line(
-                    bracket_x_start,
-                    y_centre,
-                    bracket_x_end,
-                    y_centre,
-                    width=BRACKET_LINE_THICKNESS,
+                self._lines.append(
+                    BracketLineSetBye(
+                        self._canvas,
+                        bracket_x_start,
+                        bracket_x_end,
+                        y_centre,
+                        race.theoretical_winner(),
+                    )
                 )
                 draw_race_number(ttkc.SE)
 
@@ -1078,12 +1194,16 @@ class KnockoutSheet:
         """Updates each item on the sheet."""
         for box in self._number_boxes:
             box.update(self._canvas)
+        
+        for line_set in self._lines:
+            line_set.update(self._canvas)
 
     def _clear(self) -> None:
         """Clears everything from the canvas.
         This may not be 100% memory leak free, so minimise the use of this."""
         self._canvas.delete("all")
         self._number_boxes.clear()
+        self._lines.clear()
 
     def a_paper_scale(self, min_dimensions: Tuple[float, float]) -> Tuple[float, float]:
         """Calculates the minimum size in the A paper ratio."""

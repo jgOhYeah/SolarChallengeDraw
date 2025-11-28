@@ -97,6 +97,7 @@ class NumberBox(ABC):
     class StrFixedOptions(StrEnum):
         EMPTY = ""
         DNR = "DNR"
+        NOT_APPLICABLE = "N/A"
 
     def _get_options(self) -> List[str]:
         """Create a list of options for the menu.
@@ -108,10 +109,21 @@ class NumberBox(ABC):
             values = self._race_branch.prev_race.get_options()
         else:
             values = []
+
+        if (
+            not self._race_branch.is_editable()
+            and self._race_branch.fill_probability() == FillProbability.IMPOSSIBLE
+        ):
+            # It is impossible to fill this and we can add a N/A without being noticed.
+            na_list = [self.StrFixedOptions.NOT_APPLICABLE.value]
+        else:
+            na_list = []
+
         values = (
             [self.StrFixedOptions.EMPTY]
             + [f"{i.car_id}" for i in values]
             + [self.StrFixedOptions.DNR]
+            + na_list
         )
         return values
 
@@ -119,9 +131,16 @@ class NumberBox(ABC):
         """Returns a string for the text that should be displayed in the box."""
         if self._race_branch.car is not None:
             text = f"{self._race_branch.car.car_id}"
+        elif self._race_branch.filled:
+            # Filled as empty (DNR)
+            text = self.StrFixedOptions.DNR
+        elif self._race_branch.fill_probability() == FillProbability.IMPOSSIBLE:
+            # Impossible to fill.
+            text = self.StrFixedOptions.NOT_APPLICABLE
         else:
+            # Actually empty.
             text = self.StrFixedOptions.EMPTY
-        # TODO: Update for DNR.
+
         assert text in self._get_options(), "The displayed text must be an option."
         return text
 
@@ -374,11 +393,13 @@ class BracketLineSet(ABC):
                 outline = "#000000"
 
             case (
-                FillProbability.LIKELY | FillProbability.GUARANTEED | FillProbability.UNKOWN
+                FillProbability.LIKELY
+                | FillProbability.GUARANTEED
+                | FillProbability.UNKOWN
             ):
                 dash = ()
                 outline = "#000000"
-            
+
             case _:
                 raise ValueError("???")
 
@@ -464,7 +485,10 @@ class KnockoutSheet:
     """Class that draws and manages the knockout tree structure."""
 
     def __init__(
-        self, frame: ttk.Frame, start_row: int | None, start_column: int | None
+        self,
+        frame: ttk.Frame | ttk.Window,
+        start_row: int | None,
+        start_column: int | None,
     ) -> None:
         self._frame = frame
 
@@ -1189,14 +1213,20 @@ class KnockoutSheet:
             losers_centreline + losers_height / 2 + LABEL_HEIGHT + BOTTOM_MARGIN
         )
         self.set_size(self.a_paper_scale((drawing_width, drawing_height)))
+        # self.manual_update()
 
     def update(self) -> None:
         """Updates each item on the sheet."""
+        # print("Not updating here.")
+
+    # def manual_update(self) -> None:
         for box in self._number_boxes:
             box.update(self._canvas)
-        
+
         for line_set in self._lines:
             line_set.update(self._canvas)
+
+        # self._frame.after(2000, self.manual_update)
 
     def _clear(self) -> None:
         """Clears everything from the canvas.

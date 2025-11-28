@@ -6,7 +6,7 @@ from __future__ import annotations
 from abc import ABC
 from dataclasses import dataclass
 from enum import Enum, IntEnum, StrEnum, auto
-from typing import Iterable, List, Tuple, cast
+from typing import Iterable, List, Literal, Tuple, cast
 import numpy as np
 from car import Car
 from abc import ABC, abstractmethod
@@ -57,24 +57,28 @@ class RaceBranch:
     def is_editable(self) -> bool:
         """Checks if the race branch is editable."""
         ok_type = self.branch_type == BranchType.DEPENDENT_EDITABLE
-        winner_race_undecided = True
-        loser_race_undecided = True
         all_competitors_available = True
         if self.prev_race is not None:
             # We need to check the previous race.
-            loser_race_undecided = (self.prev_race.loser_next_race is None) or (
-                not self.prev_race.loser_next_race.is_result_decided()
-            )
-            winner_race_undecided = (self.prev_race.winner_next_race is None) or (
-                not self.prev_race.winner_next_race.is_result_decided()
-            )
-            all_competitors_available = self.prev_race.has_competitors()
+            all_competitors_available = self.prev_race.branches_filled()
 
         return (
             ok_type
-            and winner_race_undecided
-            and loser_race_undecided
+            and not self.is_depended_on()
             and all_competitors_available
+            and self.fill_probability(include_self_filled=False)
+            > FillProbability.IMPOSSIBLE
+        )
+
+    def is_depended_on(self) -> bool:
+        """Checks if another race has a result and depends on the current one."""
+
+        def race_decided(race: Race | Podium | None) -> bool:
+            return race is not None and race.is_result_decided()
+
+        return self.prev_race is not None and (
+            race_decided(self.prev_race.winner_next_race)
+            or race_decided(self.prev_race.loser_next_race)
         )
 
     def branch_result(self) -> BranchResult:
@@ -94,25 +98,47 @@ class RaceBranch:
         else:
             return BranchResult.NEITHER
 
-    def fill_probability(self) -> FillProbability:
-        """Works out the probability that the branch has a competitor in it."""
-        if self.filled:
-            # When filled in or the initial round are the only times we can state with certainty.
+    def fill_probability(self, include_self_filled: bool = True) -> FillProbability:
+        """Works out the probability that the branch has a competitor in it.
+
+        Args:
+            include_self_filled (bool, optional): Whether to include the fact
+                that the branch may actually be filled (with or without a car
+                rather than only relying on previous races. Defaults to True.
+
+        Returns:
+            FillProbability: The probability that the branch may be filled (or
+                actually is filled if include_self_filled = True).
+        """
+
+        def car_assign_prob() -> (
+            Literal[FillProbability.IMPOSSIBLE] | Literal[FillProbability.GUARANTEED]
+        ):
+            """The probability based on whether a car has been assigned assuming this branch is filled.
+
+            Returns:
+                Literal[FillProbability.IMPOSSIBLE] | Literal[FillProbability.GUARANTEED]: The possible extremes of probability.
+            """
             if self.car is None:
                 return FillProbability.IMPOSSIBLE
             else:
                 return FillProbability.GUARANTEED
+
+        if include_self_filled and self.filled:
+            # Work out the probability based on whether we have been assigned a car or not.
+            return car_assign_prob()
         else:
-            # Depends on a previous round.
             match self.branch_result():
                 case BranchResult.WINNER:
-                    # Branch will always be filled except in the event of a DNR.
-                    return FillProbability.LIKELY
+                    assert (
+                        self.prev_race is not None
+                    ), "The branch is the result of a win, so there should be a previous race."
+                    return self.prev_race.winner_probability()
                 case BranchResult.LOSER:
                     # Branch is likely to be filled if there is more than one competitor in the previous race.
                     assert (
                         self.prev_race is not None
-                    ), "We should have already handled the initial round."
+                    ), "The branch is the result of a loss, so there should be a previous race."
                     if (
                         self.prev_race.get_expected_competitors(FillProbability.LIKELY)
                         == 2
@@ -120,10 +146,10 @@ class RaceBranch:
                         # Both competitors are likely to be filled, so we will probably have a loser.
                         return FillProbability.LIKELY
                     else:
-                        # Not likely.
+                        # Not likely to be filled as there aren't enough likely competitors to fill a loser.
                         return FillProbability.UNLIKELY
-                case _:
-                    assert False, "There is another result type???"
+                case BranchResult.NEITHER:
+                    return car_assign_prob()
 
 
 class Winnable(ABC):
@@ -162,10 +188,15 @@ class Winnable(ABC):
         """Returns the number of competitors expected with at least the given fill probability. This may be 1 for a bye or podium and 2 for a race."""
         pass
 
-    def has_competitors(
-        self, filter_prev_race: Race | None = None, check_any: bool = False
+    def branches_filled(
+        self,
+        filter_prev_race: Race | None = None,
+        check_any: bool = False,
+        include_impossible: bool = True,
+        include_impossible_future: bool = False,
     ) -> bool:
-        """Returns true if any/all cars have been specified for the race / podium.
+        """Returns true if any/all branches have been specified for the race / podium.
+        Each branch may be filled with either a car or None to indicate an empty spot.
 
         Args:
             filter_prev_race (Race | None, optional): If a previous race is provided,
@@ -174,21 +205,45 @@ class Winnable(ABC):
                 None.
             check_any (bool, optional): If True, returns True if any competitor is
                 set. If False, requires that all competitors be set. Defaults to
-                False
-
+                False.
+            include_impossible (bool, optional): If True, treats impossible to fill
+                branches as filled. Defaults to True.
+            include_impossible_future (bool, optional): If True, checks future races
+                to check if they are filled in the case of impossible to fill branches.
+                Defaults to False.
         Returns:
             bool: If the required number of competitors for the provided previous race
         """
+        # Possible to add cars, we need to check each branch.
         branches = self.get_branches(filter_prev_race)
         for b in branches:
-            if b.filled and check_any:
+            # Automatically treat impossible fills as filled.
+            impossible_fill = (
+                b.prev_race is not None
+                and b.prev_race.winner_probability() == FillProbability.IMPOSSIBLE
+            )
+            filled = b.filled or (include_impossible and impossible_fill)
+            if not filled and impossible_fill and include_impossible_future:
+                # Check if the branch is used in the future.
+                filled = b.is_depended_on()
+
+            if filled and check_any:
                 return True
 
-            if not b.filled and not check_any:
+            if not filled and not check_any:
                 return False
 
         # We got to the end and all are filled if they need to be or none are.
         return not check_any
+
+    def winner_probability(self) -> FillProbability:
+        """Returns the probability that there is a winner for the race / podium.
+
+        The likelyhood is the maximum probability of the previous race's
+        branches being filled with LIKELY as the allowed maximum due to a
+        potential DNR."""
+        max_probability = max([b.fill_probability() for b in self.get_branches()])
+        return min(max_probability, FillProbability.LIKELY)
 
     @abstractmethod
     def is_result_decided(self) -> bool:
@@ -384,8 +439,10 @@ class Race(Winnable):
         loser = None
         filled = True
         if car_number == self.WINNER_DNR:
-            # Both failed to run. # TODO: Handle
-            raise NotImplementedError("DNR is not implemented yet.")
+            # Both failed to run.
+            winner = None
+            loser = None  # TODO: Fix this.
+            print(f"TODO: Fix DNR loser. at {__file__}")
         elif (
             self.left_branch.car is not None
             and car_number == self.left_branch.car.car_id
@@ -437,18 +494,20 @@ class Race(Winnable):
             self.right_branch.fill_probability() >= min_fill_probability
         )
 
-    def is_result_decided(self):
+    def is_result_decided(self) -> bool:
         """Checks if the result for the current race is decided."""
-        result = (
-            # Does the corresponding branch in the winner's race have a competitor?
-            self.winner_next_race is not None
-            and self.winner_next_race.has_competitors(self)
-        ) or (
-            # Does the corresponding branch in the loser's race have a competitor?
-            self.loser_next_race is not None
-            and self.loser_next_race.has_competitors(self)
-        )
-        return result
+
+        def check_race(race: Race | Podium | None) -> bool:
+            """Checks if the result of a future race have been decided."""
+            if race is not None:
+                return race.branches_filled(
+                    self, include_impossible=False, include_impossible_future=True
+                )
+            else:
+                # Nothing here to be decided.
+                return False
+
+        return check_race(self.winner_next_race) or check_race(self.loser_next_race)
 
     def __repr__(self) -> str:
         def car_none_str(car_none: Car | None):

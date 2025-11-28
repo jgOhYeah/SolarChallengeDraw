@@ -5,6 +5,7 @@ sys.path.insert(
     0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../SolarChallengeDraw"))
 )
 from knockout import *
+from car import *
 import unittest
 
 
@@ -155,15 +156,10 @@ class TestRace(unittest.TestCase):
         ), "Initial competitors incorrect."
         left_race.set_winner(left_race.left_branch.car.car_id)
         right_race.set_winner(right_race.left_branch.car.car_id)
-        # assert (
-        #     winner_race.left_branch.car is not None and loser_race.left_branch.car is not None
-        # ), "Set_winner failed"
-        # winner_race.set_winner(winner_race.left_branch.car.car_id)
-        # loser_race.set_winner(loser_race.left_branch.car.car_id)
 
-        print(left_race, right_race)
-        print(winner_race, loser_race)
-        print(next_loser_race)
+        # print(left_race, right_race)
+        # print(winner_race, loser_race)
+        # print(next_loser_race)
 
         # Now check if editable
         self.assertTrue(
@@ -177,15 +173,15 @@ class TestRace(unittest.TestCase):
 
     def test_has_competitors(self):
         left_race, right_race, winner_race, loser_race = self.create_4_races_with_bye()
-        self.assertTrue(left_race.has_competitors(), "Initial should have competitors.")
+        self.assertTrue(left_race.branches_filled(), "Initial should have competitors.")
         self.assertTrue(
-            right_race.has_competitors(), "Initial should have competitors."
+            right_race.branches_filled(), "Initial should have competitors."
         )
         self.assertFalse(
-            winner_race.has_competitors(), "Subsequent should not have competitors yet."
+            winner_race.branches_filled(), "Subsequent should not have competitors yet."
         )
         self.assertFalse(
-            loser_race.has_competitors(), "Subsequent should not have competitors yet."
+            loser_race.branches_filled(), "Subsequent should not have competitors yet."
         )
 
         # Set competitors for one side of winner.
@@ -194,27 +190,27 @@ class TestRace(unittest.TestCase):
 
         # Tests with a single competitor filled.
         self.assertFalse(
-            winner_race.has_competitors(check_any=False),
+            winner_race.branches_filled(check_any=False),
             "Not all competitors provided.",
         )
         self.assertTrue(
-            winner_race.has_competitors(check_any=True),
+            winner_race.branches_filled(check_any=True),
             "Check any with a single competitor.",
         )
         self.assertTrue(
-            winner_race.has_competitors(filter_prev_race=left_race, check_any=False),
+            winner_race.branches_filled(filter_prev_race=left_race, check_any=False),
             "Filter a single race.",
         )
         self.assertFalse(
-            loser_race.has_competitors(check_any=False),
+            loser_race.branches_filled(check_any=False),
             "Not all competitors provided.",
         )
         self.assertTrue(
-            loser_race.has_competitors(check_any=True),
+            loser_race.branches_filled(check_any=True),
             "This should be a bye that has the empty branch marked.",
         )
         self.assertTrue(
-            loser_race.has_competitors(filter_prev_race=left_race, check_any=False),
+            loser_race.branches_filled(filter_prev_race=left_race, check_any=False),
             "Filter a single race.",
         )
 
@@ -224,10 +220,10 @@ class TestRace(unittest.TestCase):
 
         # Tests with both competitors filled.
         self.assertTrue(
-            winner_race.has_competitors(), "Both competitors should have been provided."
+            winner_race.branches_filled(), "Both competitors should have been provided."
         )
         self.assertTrue(
-            loser_race.has_competitors(),
+            loser_race.branches_filled(),
             "The bye should have been successfully handled in the loser's race.",
         )
 
@@ -279,6 +275,32 @@ class TestRace(unittest.TestCase):
 #             RaceBranch(1, BranchType.DEPENDENT_EDITABLE, prev_race=None),
 #             right_branch=RaceBranch(2, BranchType.DEPENDENT_EDITABLE, prev_race=None)
 #         )
+
+class TestCar(unittest.TestCase):
+    def test_load_csv(self) -> None:
+        csv_cars = load_cars(os.path.join(os.path.dirname(__file__), "test_cars.csv"))
+        list_cars = [
+            Car(101, 1, "Flying fish", True, True, True, 1),
+            Car(102, 1, "Curious cat", True, True, True, 1),
+            Car(103, 1, "Hungry horse", True, True, True, 2),
+            Car(104, 2, "Percy penguin", True, True, True, 3),
+            Car(105, 3, "Munching mouse", True, True, True, 4),
+            Car(106, 3, "Busy bee", True, True, True, 4)
+        ]
+        self.assertEqual(csv_cars, list_cars, "The loaded CSV file does not match the theoretically equivalent list.")
+
+class TestEvent(unittest.TestCase):
+    def test_create(self):
+        cars = [
+            Car(101, 1, "Flying fish", True, True, True, 1),
+            Car(102, 1, "Curious cat", True, True, True, 1),
+            Car(103, 1, "Hungry horse", True, True, True, 2),
+            Car(104, 2, "Percy penguin", True, True, True, 3),
+            Car(105, 3, "Munching mouse", True, True, True, 4),
+            Car(106, 3, "Busy bee", True, True, True, 4)
+        ]
+        event = KnockoutEvent(cars, "Test")
+
 if __name__ == "__main__":
     # race = TestRace()
     # race.test_is_editable()

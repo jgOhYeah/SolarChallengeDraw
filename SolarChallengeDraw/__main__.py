@@ -14,7 +14,6 @@ Written by Jotham Gates, 2025.
 """
 import argparse
 import platform
-from knockout_sheet import InteractiveNumberBoxFactory, PrintNumberBoxFactory
 import gui
 import knockout
 import car

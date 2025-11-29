@@ -11,11 +11,11 @@ import ttkbootstrap.tableview as tableview
 from abc import ABC, abstractmethod
 import datetime
 from knockout import KnockoutEvent
-from knockout_sheet import (
+from knockout_sheet_elements import (
     InteractiveNumberBoxFactory,
-    KnockoutSheet,
     PrintNumberBoxFactory,
 )
+from knockout_sheet import KnockoutSheet
 from file_picker import FilePicker
 
 

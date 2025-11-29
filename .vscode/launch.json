@@ -8,12 +8,12 @@
             "name": "Python Debugger: Current File with Arguments",
             "type": "debugpy",
             "request": "launch",
-            // "program": "SolarChallengeDraw/__main__.py",
-            "program": "testing/knockout_test.py",
+            "program": "SolarChallengeDraw/__main__.py",
+            // "program": "testing/knockout_test.py",
             "console": "integratedTerminal",
             "args": [
                 "--cars=./database/cars.csv"
-            ]
+            ],
             // "args": ["database/SolarChallengeDraw.sqlite"]
         }
     ]

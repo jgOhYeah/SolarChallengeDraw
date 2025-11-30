@@ -3,13 +3,18 @@ Represents each race in a knockout competition.
 Written by Jotham Gates, 29/11/2025"""
 
 from __future__ import annotations
-from abc import ABC
+from abc import ABC, abstractproperty
 from dataclasses import dataclass
 from enum import Enum, IntEnum, StrEnum, auto
-from typing import Iterable, List, Literal, Tuple, cast
+from typing import Iterable, List, Literal, Tuple, cast, TYPE_CHECKING
 import numpy as np
 from car import Car
 from abc import ABC, abstractmethod
+
+if TYPE_CHECKING:
+    # We are in type checking mode and are allowed a circular import. This is always skipped in runtime.
+    # https://stackoverflow.com/a/39757388
+    from knockout import AuxilliaryRaceManager
 
 
 class BranchType(Enum):
@@ -255,6 +260,12 @@ class Winnable(ABC):
         """Returns a short name for the race/position."""
         pass
 
+    @property
+    @abstractmethod
+    def is_auxilliary_race(self) -> bool:
+        """Checks if the current race / podium is an auxilliary race."""
+        pass
+
 
 class Podium(Winnable):
     """Class for a placing in the tournament."""
@@ -307,6 +318,10 @@ class Podium(Winnable):
 
         return f"{self.position}{suffix} place"
 
+    @property
+    def is_auxilliary_race(self) -> bool:
+        return False
+
 
 class Race(Winnable):
     """Class that represents a knockout race."""
@@ -319,6 +334,8 @@ class Race(Winnable):
         loser_next_race: Race | Podium | None = None,
         winner_show_label: bool = False,
         loser_show_label: bool = False,
+        is_auxilliary_race: bool = False,
+        race_number: int = 0
     ):
         self.left_branch = left_branch
         self.right_branch = right_branch
@@ -326,7 +343,8 @@ class Race(Winnable):
         self.loser_next_race: Race | Podium | None = loser_next_race
         self.winner_show_label = winner_show_label
         self.loser_show_label = loser_show_label
-        self.race_number: int = 0
+        self.race_number: int = race_number
+        self._is_auxilliary_race = is_auxilliary_race
 
     def theoretical_winner(self) -> RaceBranch:
         """Calculates the theoretical winner based on seeding.
@@ -377,29 +395,6 @@ class Race(Winnable):
         Returns:
             bool: True when the race is a bye.
         """
-
-        # def this_branch_relies_on_a_bye_loser(branch: RaceBranch) -> bool:
-        #     """Checks if the given branch is fed from the loser of a bye (won't be populated)."""
-        #     # TODO: This will be populated in the event that the car in the previous race does not run.
-        #     return (
-        #         branch.prev_race is not None
-        #         and branch.prev_race.is_bye()
-        #         and branch.prev_race.loser_next_race is self
-        #     )
-
-        # def branch_fixed_empty(branch: RaceBranch) -> bool:
-        #     """Checks if a branch is fixed as empty."""
-        #     return branch.branch_type == BranchType.FIXED and branch.car is None
-
-        # return (
-        #     # Bye in the first round.
-        #     branch_fixed_empty(self.left_branch)
-        #     or branch_fixed_empty(self.right_branch)
-        #     # Bye because of a previous round.
-        #     or this_branch_relies_on_a_bye_loser(self.left_branch)
-        #     or this_branch_relies_on_a_bye_loser(self.right_branch)
-        # )
-
         return self.get_expected_competitors(FillProbability.UNLIKELY) == 1
 
     WINNER_EMPTY = -1
@@ -424,7 +419,9 @@ class Race(Winnable):
             # No competitors.
             return []
 
-    def set_winner(self, car_number: int) -> None:
+    def set_winner(
+        self, car_number: int, auxilliary_manager: AuxilliaryRaceManager
+    ) -> None:
         """Sets the winner of the race.
 
         Args:
@@ -434,43 +431,71 @@ class Race(Winnable):
             NotImplementedError: If the race was a DNR (TODO).
             ValueError: If the car number is not part of the race.
         """
-        # Default is clearing the winners and losers.
-        winner = None
-        loser = None
-        filled = True
+
+        def optional_update(
+            race: Race | Podium | None, competitor: Car | None, filled: bool
+        ) -> None:
+            """Updates the next race if it exists."""
+            if race is not None:
+                race.update_from_prev_race(self, competitor, filled)
+
+        def add_dnr():
+            # This is a DNR - (no winner).
+            if (
+                self.loser_next_race is not None
+                and not self.loser_next_race.is_auxilliary_race
+            ):
+                # We don't already have an auxilliary race in place and are allowed to add one.
+                optional_update(self.winner_next_race, None, True)
+                options = self.get_options()
+                if len(options) == 2:
+                    # We need to add an auxilliary race as we have 2 competitors vying to win the losing spot.
+                    # Clear the current loser's race before adding the auxilliary race.
+                    optional_update(self.loser_next_race, None, False)
+                    auxilliary_manager.add_race(self)
+                elif len(options) == 1:
+                    # We have a single competitor. Drop then straight into the loosing spot.
+                    optional_update(self.loser_next_race, options[0], True)
+                else:
+                    assert False, "There should only be 1 or 2 options."
+
+        # Remove the auxilliary race if no longer a DNR.
+        if (
+            self.loser_next_race is not None
+            and self.loser_next_race.is_auxilliary_race
+            and car_number != self.WINNER_DNR
+        ):
+            # The race was, but is no longer a DNR.
+            auxilliary_manager.free_race(self)
+
+        # Options and actions.
         if car_number == self.WINNER_DNR:
             # Both failed to run.
-            winner = None
-            loser = None  # TODO: Fix this.
-            print(f"TODO: Fix DNR loser. at {__file__}")
+            add_dnr()
+
         elif (
             self.left_branch.car is not None
             and car_number == self.left_branch.car.car_id
         ):
             # Left car won.
-            winner = self.left_branch.car
-            loser = self.right_branch.car
+            optional_update(self.winner_next_race, self.left_branch.car, True)
+            optional_update(self.loser_next_race, self.right_branch.car, True)
         elif (
             self.right_branch.car is not None
             and car_number == self.right_branch.car.car_id
         ):
             # Right car won.
-            winner = self.right_branch.car
-            loser = self.left_branch.car
+            optional_update(self.winner_next_race, self.right_branch.car, True)
+            optional_update(self.loser_next_race, self.left_branch.car, True)
         elif car_number == self.WINNER_EMPTY:
             # Reset back to empty.
-            filled = False
+            optional_update(self.winner_next_race, None, False)
+            optional_update(self.loser_next_race, None, False)
         else:
             # Unrecognised car.
             raise ValueError(
                 f"Car {car_number} is not a known competitor in race {str(self)}."
             )
-
-        # Propagate the result.
-        if self.winner_next_race is not None:
-            self.winner_next_race.update_from_prev_race(self, winner, filled)
-        if self.loser_next_race is not None:
-            self.loser_next_race.update_from_prev_race(self, loser, filled)
 
     def update_from_prev_race(
         self, prev_race: Race, competitor: Car | None, filled: bool
@@ -520,4 +545,9 @@ class Race(Winnable):
         return f"{self.name()}({self.left_branch.seed:>2d} {car_none_str(self.left_branch.car)}, {self.right_branch.seed:>2d} {car_none_str(self.right_branch.car)})"
 
     def name(self) -> str:
-        return f"R{self.race_number}"
+        prefix = "AR" if self.is_auxilliary_race else "R"
+        return f"{prefix}{self.race_number}"
+
+    @property
+    def is_auxilliary_race(self) -> bool:
+        return self._is_auxilliary_race

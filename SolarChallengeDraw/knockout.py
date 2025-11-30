@@ -9,7 +9,7 @@ from typing import Iterable, List, cast
 import numpy as np
 
 from car import Car
-from knockout_race import Race, RaceBranch, BranchType, Podium
+from knockout_race import FillProbability, Race, RaceBranch, BranchType, Podium
 
 
 def add_round(next_round: List[Race]) -> List[Race]:
@@ -309,10 +309,140 @@ class RoundId:
         return repr(self)
 
 
+class AuxilliaryRaceManager:
+    """Class that manages axilliary races."""
+
+    def __init__(self, max_races: int) -> None:
+        """Initialises the race manager with a given number of races.
+
+        Args:
+            max_races (int): The number of races.
+        """
+        self.races = [
+            Race(
+                left_branch=RaceBranch(-1, BranchType.DEPENDENT_NOT_EDITABLE),
+                right_branch=RaceBranch(-1, BranchType.DEPENDENT_NOT_EDITABLE),
+                is_auxilliary_race=True,
+                race_number=i
+            )
+            for i in range(max_races)
+        ]
+
+    def _get_first_free(self) -> Race:
+        """Returns the first unused auxilliary race.
+
+        Raises:
+            LookupError: If there are no spare races.
+
+        Returns:
+            Race: The race.
+        """
+        for race in self.races:
+            if (
+                race.left_branch.prev_race is None
+                and race.right_branch.prev_race is None
+            ):
+                return race
+
+        raise LookupError("No spare auxilliary races found.")
+
+    def add_race(self, prev_race: Race) -> Race:
+        """Adds an auxilliary race in between a provided race and the next losers' race.
+
+        Args:
+            prev_race (Race): The race to insert.
+
+        Returns:
+            Race: The auxilliary race added.
+        """
+        assert (
+            prev_race.get_expected_competitors(FillProbability.UNLIKELY) == 2
+        ), "This function needs to be called on a race with 2 competitors that did not run."
+        aux_race = self._get_first_free()
+        self.insert(prev_race, aux_race)
+        return aux_race
+
+    @classmethod
+    def insert(cls, prev_race: Race, aux_race: Race) -> None:
+        """Inserts the auxilliary race in between the loser of the provided race
+        and the loser next race.
+
+        Args:
+            prev_race (Race): The previous race to insert afterwards.
+            aux_race (Race): The auxilliary race to add in.
+        """
+        # Get the next race and make it point back to the auxilliary race.
+        next_race = prev_race.loser_next_race
+        assert (
+            next_race is not None
+        ), "We need a next race / podium to be able to insert an auxilliary race."
+        next_race_branches = next_race.get_branches(prev_race)
+        assert len(next_race_branches) == 1, "There should only be a single branch."
+        next_race_branch = next_race_branches[0]
+        next_race_branch.prev_race = aux_race
+
+        # Make the auxilliary race point to the next race.
+        aux_race.winner_next_race = next_race
+
+        # Set each branch of the auxilliary race to point to the previous race.
+        def set_branch(aux_branch: RaceBranch, prev_branch: RaceBranch) -> None:
+            aux_branch.prev_race = prev_race
+            aux_branch.car = prev_branch.car
+            aux_branch.filled = prev_branch.filled
+
+        set_branch(aux_race.left_branch, prev_race.right_branch)
+        set_branch(aux_race.right_branch, prev_race.left_branch)
+
+        # Point forwards from the previous race to the auxilliary race.
+        prev_race.loser_next_race = aux_race
+
+    def remove(self, prev_race: Race) -> None:
+        """Removes the auxilliary race from the previous one.
+
+        Args:
+            prev_race (Race): The previous race.
+        """
+        # Get the auxilliary race and check it is ok to remove it.
+        aux_race = prev_race.loser_next_race
+        assert (
+            aux_race is not None and aux_race in self.races
+        ), "The previous race must point to an auxilliary race."
+        assert (
+            not aux_race.is_result_decided()
+        ), "It is not reasonable to remove an auxilliary race if the result is decided."
+
+        # Get the next race and make it point back to the previous race.
+        next_race = aux_race.winner_next_race
+        assert next_race is not None, "The auxilliary race must point to a race."
+        next_race_branches = next_race.get_branches(aux_race)
+        assert len(next_race_branches) == 1, "There should only be a single branch."
+        next_race_branch = next_race_branches[0]
+        next_race_branch.prev_race = prev_race
+
+        # Make the auxilliary race point to nothing.
+        aux_race.winner_next_race = None
+
+        def set_branch(aux_branch: RaceBranch) -> None:
+            aux_branch.prev_race = None
+            aux_branch.car = None
+            aux_branch.filled = False
+
+        set_branch(aux_race.left_branch)
+        set_branch(aux_race.right_branch)
+
+        # Point forwards from the previous race to the next race.
+        prev_race.loser_next_race = next_race
+
+    def free_race(self, prev_race: Race) -> None:
+        print(f"Freeing aux. race {prev_race.loser_next_race} from {prev_race}")
+        self.remove(prev_race)
+        # TODO: Reorganise / shuffle.
+
+
 class KnockoutEvent:
     """A class that contains all races for the knockout event."""
 
-    def __init__(self, cars: List[Car], name: str) -> None:
+    def __init__(self, cars: List[Car], name: str, auxilliary_races: int) -> None:
         self.winners_bracket = create_empty_draw(len(cars))
         assign_cars(cars, self.winners_bracket[0])
         self.losers_bracket = create_loosers_draw(self.winners_bracket)
@@ -328,6 +458,7 @@ class KnockoutEvent:
             self.losers_bracket[-1][0],
             self.losers_bracket[-2][0],
         )
+        self.auxilliary_races = AuxilliaryRaceManager(auxilliary_races)
         self._number_races()
 
     def calculate_play_order(self) -> List[RoundId]:

@@ -64,7 +64,7 @@ def ghostscript_location(provided: str | None) -> str:
 if __name__ == "__main__":
     args = get_arguments()
     cars = car.load_cars(args.cars)
-    knockout_event = knockout.KnockoutEvent(cars, "Test event")
+    knockout_event = knockout.KnockoutEvent(cars, "Test event", 10)
     knockout_event.print()
     gui_ui = gui.Gui(ghostscript_location(args.ghostscript))
     gui_ui.knockout.draw_event(knockout_event)

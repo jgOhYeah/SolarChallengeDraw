@@ -6,7 +6,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from enum import StrEnum
 import tkinter as tk
-from typing import Iterable, List, Tuple, TYPE_CHECKING
+from typing import Iterable, List, Literal, Tuple, TYPE_CHECKING, cast
 import numpy as np
 import ttkbootstrap as ttk
 import ttkbootstrap.constants as ttkc
@@ -16,11 +16,14 @@ if TYPE_CHECKING:
     # https://stackoverflow.com/a/39757388
     from knockout_sheet import KnockoutSheet
 
+from knockout import AuxilliaryRaceManager, KnockoutEvent
 from knockout_race import (
+    BranchResult,
+    Podium,
     RaceBranch,
     FillProbability,
     Race,
-    BranchType
+    BranchType,
 )
 
 # Settings
@@ -46,7 +49,8 @@ ARROW_WIDTH = 20
 BRACKET_VERTICAL_SEPARATION = 50
 BRACKET_LINE_THICKNESS = 2
 FIRST_COLUMN_HINT_WIDTH = LABEL_WIDTH
-column_width = LABEL_WIDTH + 2 * TEXT_MARGIN + 2 * HORIZONTAL_LINE_LENGTH
+COLUMN_WIDTH = LABEL_WIDTH + 2 * TEXT_MARGIN + 2 * HORIZONTAL_LINE_LENGTH
+AUX_RACES_SECTION_WIDTH = COLUMN_WIDTH + LABEL_WIDTH + 2*TEXT_MARGIN
 
 
 class NumberBox(ABC):
@@ -54,32 +58,30 @@ class NumberBox(ABC):
 
     def __init__(
         self,
-        canvas: ttk.Canvas,
         x: float,
         y: float,
         race_branch: RaceBranch,
+        aux_race_manager: AuxilliaryRaceManager,
         sheet: KnockoutSheet,
     ) -> None:
         """Initialises the number box.
 
         Args:
-            canvas (ttk.Canvas): The canvas to draw on.
             x (float): The x coordinate of the west side.
             y (float): The y coordinate of the horizontal centre line.
-            race_branch (RaceBranch): The race brnach whose number we are to show.
+            race_branch (RaceBranch): The race branch whose number we are to show.
+            aux_race_manager (AuxilliaryRaceManager): Manager for auxilliary races.
             sheet (KnockoutSheet): The sheet that is to be called back upon update.
         """
         self._race_branch = race_branch
-        self._draw(canvas, x, y, sheet)
+        self._aux_race_manager = aux_race_manager
+        self._draw(x, y, sheet)
 
     @abstractmethod
-    def _draw(
-        self, canvas: ttk.Canvas, x: float, y: float, sheet: KnockoutSheet
-    ) -> None:
+    def _draw(self, x: float, y: float, sheet: KnockoutSheet) -> None:
         """Abstract method that creates and draws the objects.
 
         Args:
-            canvas (ttk.Canvas): The canvas to draw on.
             x (float): The x coordinate of the west side.
             y (float): The y coordinate of the horizontal centre line.
             sheet (KnockoutSheet): The sheet that is to be called back upon update.
@@ -142,7 +144,12 @@ class NumberBox(ABC):
             # Actually empty.
             text = self.StrFixedOptions.EMPTY
 
-        assert text in self._get_options(), "The displayed text must be an option."
+        # assert text in self._get_options(), "The displayed text must be an option."
+
+        options = self._get_options()
+        assert (
+            text in options
+        ), f"The displayed text ({text}) must be an option ({options})."
         return text
 
 
@@ -153,13 +160,13 @@ class InteractiveNumberBox(NumberBox):
 
     def __init__(
         self,
-        canvas: ttk.Canvas,
         x: float,
         y: float,
         race_branch: RaceBranch,
+        aux_race_manager: AuxilliaryRaceManager,
         sheet: KnockoutSheet,
     ) -> None:
-        super().__init__(canvas, x, y, race_branch, sheet)
+        super().__init__(x, y, race_branch, aux_race_manager, sheet)
         self._in_update = False  # Signals if a change to the combobox should be ignored (somewhat like a semaphore).
 
     def _combobox_state(self) -> str:
@@ -170,9 +177,7 @@ class InteractiveNumberBox(NumberBox):
         """
         return ttkc.NORMAL if self._race_branch.is_editable() else ttkc.DISABLED
 
-    def _draw(
-        self, canvas: ttk.Canvas, x: float, y: float, sheet: KnockoutSheet
-    ) -> None:
+    def _draw(self, x: float, y: float, sheet: KnockoutSheet) -> None:
         # Show a combobox (may need to be non-editable).
 
         def validate(selected: str) -> bool:
@@ -194,12 +199,18 @@ class InteractiveNumberBox(NumberBox):
                 ), "There should be a previous race to select values from."
                 match selected:
                     case self.StrFixedOptions.EMPTY:
-                        self._race_branch.prev_race.set_winner(Race.WINNER_EMPTY)
+                        self._race_branch.prev_race.set_winner(
+                            Race.WINNER_EMPTY, self._aux_race_manager
+                        )
                     case self.StrFixedOptions.DNR:
-                        self._race_branch.prev_race.set_winner(Race.WINNER_DNR)
+                        self._race_branch.prev_race.set_winner(
+                            Race.WINNER_DNR, self._aux_race_manager
+                        )
                     case _:
                         number = int(selected)
-                        self._race_branch.prev_race.set_winner(number)
+                        self._race_branch.prev_race.set_winner(
+                            number, self._aux_race_manager
+                        )
 
                 sheet.update()
 
@@ -211,17 +222,17 @@ class InteractiveNumberBox(NumberBox):
                 update_races(current_var.get())
 
         self._combobox = ttk.Combobox(
-            canvas,
+            sheet.canvas,
             validate="all",
-            validatecommand=(canvas.register(validate), "%P"),
+            validatecommand=(sheet.canvas.register(validate), "%P"),
             textvariable=current_var,
         )
 
         # Add the trace after writing the initial value to the combobox.
         current_var.trace_add("write", on_write)
 
-        self.update(canvas)
-        canvas.create_window(
+        self.update(sheet.canvas)
+        sheet.canvas.create_window(
             x,
             y,
             anchor=ttkc.W,
@@ -243,19 +254,17 @@ class InteractiveNumberBox(NumberBox):
 class PrintNumberBox(NumberBox):
     """Class that draws a box around a number that can be printed but is not editable."""
 
-    def _draw(
-        self, canvas: ttk.Canvas, x: float, y: float, sheet: KnockoutSheet
-    ) -> None:
-        self._rectangle = canvas.create_rectangle(
+    def _draw(self, x: float, y: float, sheet: KnockoutSheet) -> None:
+        self._rectangle = sheet.canvas.create_rectangle(
             x, y - LABEL_HEIGHT / 2, x + LABEL_WIDTH, y + LABEL_HEIGHT / 2, fill="#fff"
         )
-        self._text = canvas.create_text(
+        self._text = sheet.canvas.create_text(
             x + LABEL_WIDTH / 2,
             y,
             anchor=ttkc.CENTER,
             font=(FONT, FONT_NORMAL_SIZE),
         )
-        self.update(canvas)
+        self.update(sheet.canvas)
 
     def update(self, canvas: ttk.Canvas) -> None:
         canvas.itemconfigure(self._text, text=self._display_text())
@@ -264,14 +273,12 @@ class PrintNumberBox(NumberBox):
 
 
 class InitialNumberBox(NumberBox):
-    def _draw(
-        self, canvas: ttk.Canvas, x: float, y: float, sheet: KnockoutSheet
-    ) -> None:
+    def _draw(self, x: float, y: float, sheet: KnockoutSheet) -> None:
         assert (
             self._race_branch.car is not None
         ), "The initial number box cannot cope with None car ID currently."
         # Show the numbers as not a dropdown at all.
-        self._line1 = canvas.create_text(
+        self._line1 = sheet.canvas.create_text(
             x + LABEL_WIDTH,
             y - TEXT_LINE_HEIGHT / 2,
             anchor=ttkc.E,
@@ -279,7 +286,7 @@ class InitialNumberBox(NumberBox):
             text=self._line1_text(),
             font=(FONT, FONT_NORMAL_SIZE),
         )
-        self._line2 = canvas.create_text(
+        self._line2 = sheet.canvas.create_text(
             x + LABEL_WIDTH,
             y + TEXT_LINE_HEIGHT / 2,
             anchor=ttkc.E,
@@ -311,50 +318,50 @@ class NumberBoxFactory(ABC):
     @abstractmethod
     def _create_not_fixed(
         self,
-        canvas: ttk.Canvas,
         x: float,
         y: float,
         race_branch: RaceBranch,
+        aux_race_manager: AuxilliaryRaceManager,
         sheet: KnockoutSheet,
     ) -> NumberBox:
         pass
 
     def create(
         self,
-        canvas: ttk.Canvas,
         x: float,
         y: float,
         race_branch: RaceBranch,
+        aux_race_manager: AuxilliaryRaceManager,
         sheet: KnockoutSheet,
     ) -> NumberBox:
         if race_branch.branch_type != BranchType.FIXED:
-            return self._create_not_fixed(canvas, x, y, race_branch, sheet)
+            return self._create_not_fixed(x, y, race_branch, aux_race_manager, sheet)
         else:
-            return InitialNumberBox(canvas, x, y, race_branch, sheet)
+            return InitialNumberBox(x, y, race_branch, aux_race_manager, sheet)
 
 
 class InteractiveNumberBoxFactory(NumberBoxFactory):
     def _create_not_fixed(
         self,
-        canvas: ttk.Canvas,
         x: float,
         y: float,
         race_branch: RaceBranch,
+        aux_race_manager: AuxilliaryRaceManager,
         sheet: KnockoutSheet,
     ) -> NumberBox:
-        return InteractiveNumberBox(canvas, x, y, race_branch, sheet)
+        return InteractiveNumberBox(x, y, race_branch, aux_race_manager, sheet)
 
 
 class PrintNumberBoxFactory(NumberBoxFactory):
     def _create_not_fixed(
         self,
-        canvas: ttk.Canvas,
         x: float,
         y: float,
         race_branch: RaceBranch,
+        aux_race_manager: AuxilliaryRaceManager,
         sheet: KnockoutSheet,
     ) -> NumberBox:
-        return PrintNumberBox(canvas, x, y, race_branch, sheet)
+        return PrintNumberBox(x, y, race_branch, aux_race_manager, sheet)
 
 
 def fill_probability_style(
@@ -495,6 +502,7 @@ class BracketLineSetBye(BracketLineSet):
     def update(self, canvas: ttk.Canvas) -> None:
         self._update_line(canvas, (self._tee_line,), self._branch.fill_probability())
 
+
 class NotesBox:
     """Class that handles items in the notes box."""
 
@@ -515,7 +523,7 @@ class NotesBox:
         self._top_left = top_left
         self._bottom_right = bottom_right
         self._canvas.create_rectangle(self._top_left, self._bottom_right)
-        self._y_pos: float = self._top_left[1] + TEXT_MARGIN
+        self.y_pos: float = self._top_left[1] + TEXT_MARGIN
 
     def add_text(
         self, text: str, font: tuple | None = None, bullet_point: bool = False
@@ -542,7 +550,7 @@ class NotesBox:
             text_width -= BULLET_POINT_WIDTH
             self._canvas.create_text(
                 left,
-                self._y_pos,
+                self.y_pos,
                 anchor=ttkc.NE,
                 font=font,
                 text="• ",
@@ -553,14 +561,14 @@ class NotesBox:
         _, _, _, bottom = self._canvas.bbox(
             self._canvas.create_text(
                 left,
-                self._y_pos,
+                self.y_pos,
                 anchor=ttkc.NW,
                 font=font,
                 text=text,
                 width=text_width,
             )
         )
-        self._y_pos = bottom
+        self.y_pos = bottom
 
     def process_markdown_line(self, line: str) -> None:
         """Very basic formatter for extremely limited markdown."""
@@ -591,3 +599,321 @@ class NotesBox:
         with open(filename) as file:
             for line in file.readlines():
                 self.process_markdown_line(line)
+
+
+class RaceDrawing:
+    """Class that draws a race."""
+
+    def __init__(
+        self,
+        sheet: KnockoutSheet,
+        event: KnockoutEvent,
+        numbers_factory: NumberBoxFactory,
+        show_seed: bool,
+    ) -> None:
+        """Initialises the race drawing on the provided sheet.
+
+        Args:
+            sheet (KnockoutSheet): The sheet to draw on.
+            event (KnockoutEvent): The event containing the race to draw.
+            numbers_factory (NumberBoxFactory): The factory to use when creating numbers boxes (allows print / screen selection).
+            show_seed (bool): Whether to print the expected seed of the position in the box.
+        """
+        self._sheet = sheet
+        self._event = event
+        self._numbers_factory = numbers_factory
+        self._show_seed = show_seed
+        self._number_boxes: Tuple[NumberBox, NumberBox] | Tuple[NumberBox]
+        self._lineset: BracketLineSet
+
+    def draw_number(self, x: float, y: float, race_branch: RaceBranch) -> NumberBox:
+        """Draws a numbers box at the specified position.
+
+        Args:
+            x (float): The left-most coordinate of the box.
+            y (float): The box centreline.
+            race_branch (RaceBranch): The branch the box is to get its data from
+                and possible update.
+
+        Returns:
+            NumberBox: The created number box.
+        """
+        number_box = self._numbers_factory.create(
+            x, y, race_branch, self._event.auxilliary_races, self._sheet
+        )
+
+        # Draw the seed.
+        if self._show_seed:
+            self._sheet.canvas.create_text(
+                x + SHORT_TEXT_MARGIN,
+                y,
+                anchor=ttkc.W,
+                text=race_branch.seed,
+                fill="red",
+            )
+
+        # Arrow hinting where the competitor came from.
+        show_label = False
+        text = ""
+        match race_branch.branch_result():
+            case BranchResult.WINNER:
+                if (
+                    race_branch.prev_race is not None
+                    and race_branch.prev_race.winner_show_label
+                    and not isinstance(race_branch.prev_race.winner_next_race, Podium)
+                ):
+                    # Show the winner's label.
+                    show_label = True
+                    text = "Winner"
+
+            case BranchResult.LOSER:
+                if (
+                    race_branch.prev_race is not None
+                    and race_branch.prev_race.loser_show_label
+                    and not isinstance(race_branch.prev_race.loser_next_race, Podium)
+                ):
+                    # Show the winner's label.
+                    show_label = True
+                    text = "Loser"
+
+        if show_label:
+            self.draw_hint_from_arrow(
+                x - SHORT_TEXT_MARGIN, y, cast(Race, race_branch.prev_race), text
+            )
+
+        return number_box
+
+    def draw_hint_to_arrow(
+        self,
+        x: float,
+        y: float,
+        to_race: Race | Podium,
+        result_name: str,
+        if_dnr: bool = False,
+        flip: Literal[-1] | Literal[1] = 1,
+    ) -> None:
+        """Draws an arrow to show where to proceed from a race."""
+        points = [
+            x,
+            y,
+            x + ARROW_WIDTH / 3,
+            y + ARROW_HEIGHT * flip,
+            x + 2 * ARROW_WIDTH / 3,
+            y + ARROW_HEIGHT * flip,
+            x + ARROW_WIDTH,
+            y + ARROW_HEIGHT * flip,
+        ]
+        self._sheet.canvas.create_line(points, arrow="last", smooth=True)
+        if_dnr_text = ""
+        if if_dnr:
+            if_dnr_text = " if DNR"
+
+        self._sheet.canvas.create_text(
+            x + ARROW_WIDTH + SHORT_TEXT_MARGIN,
+            y + ARROW_HEIGHT * flip,
+            text=f"{result_name} to {to_race.name()}{if_dnr_text}",
+            anchor=ttkc.W,
+            font=(FONT, FONT_SMALL_SIZE),
+        )
+
+    def draw_hint_from_arrow(
+        self,
+        x: float,
+        y: float,
+        from_race: Race | Podium,
+        result_name: str,
+        if_dnr: bool = False,
+    ) -> None:
+        """Draws and arrow to show which race a competitor is coming from.
+        This complements draw_hint_to_arrow().
+
+        Args:
+            x (float): The x coordinate for the RIGHT side of the label.
+            y (float): The y centre coordinate.
+            from_race (Race | Podium): The race the arrow is coming from.
+            result_name (str): "Winner" or "Loser"
+            if_dnr (bool, optional): Adds an "if DNR" qualifier. Defaults to False.
+        """
+        points = [x - ARROW_WIDTH, y, x, y]
+        self._sheet.canvas.create_line(points, arrow="last", smooth=True)
+
+        if_dnr_text = ""
+        if if_dnr:
+            if_dnr_text = " if DNR"
+
+        text_left_x, _, _, _ = self._sheet.canvas.bbox(
+            self._sheet.canvas.create_text(
+                x - ARROW_WIDTH - SHORT_TEXT_MARGIN,
+                y,
+                text=f"{result_name} from {from_race.name()}{if_dnr_text}",
+                anchor=ttkc.E,
+                font=(FONT, FONT_SMALL_SIZE),
+            )
+        )
+
+    def draw_race(
+        self,
+        x: float,
+        y_centre: float,
+        y_spacing: float,
+        columns_wide: int,
+        race: Race,
+        show_result_box: bool,
+    ) -> float:
+        """Draws a race.
+
+        Args:
+            x (float): The x location of the left side of the race.
+            y_centre (float): The centreline of the race.
+            y_spacing (float): The spacing between the inputs of the race.
+            columns_wide (int): The number of columns wide to made the bracket.
+            race (Race): The race to draw.
+            show_result_box (bool): When True, draws the result of the race
+                next to it (only enable for the grand final and auxilliary races).
+
+        Returns:
+            float: The x coordinate of the right side of the race.
+        """
+        bracket_x_start = x + LABEL_WIDTH + TEXT_MARGIN
+        bracket_x_end = (
+            bracket_x_start
+            + 2 * HORIZONTAL_LINE_LENGTH
+            + (columns_wide - 1) * COLUMN_WIDTH
+        )
+
+        def draw_race_number(
+            anchor: Literal["nw", "n", "ne", "w", "center", "e", "sw", "s", "se"],
+        ) -> None:
+            """Draws the race number."""
+            self._sheet.canvas.create_text(
+                bracket_x_end - HORIZONTAL_LINE_LENGTH - SHORT_TEXT_MARGIN,
+                y_centre,
+                anchor=anchor,
+                text=race.name(),
+            )
+
+        def draw_normal_race() -> None:
+            top_y = y_centre - y_spacing / 2
+            bottom_y = y_centre + y_spacing / 2
+            assert not race.is_bye(), f"Use {draw_bye.__name__}() for a bye."
+            self._number_boxes = (
+                self.draw_number(x, top_y, race.left_branch),
+                self.draw_number(x, bottom_y, race.right_branch),
+            )
+            self._lineset = BracketLineSetNormal(
+                self._sheet.canvas,
+                bracket_x_start,
+                bracket_x_end,
+                y_centre,
+                (race.left_branch, race.right_branch),
+                y_spacing,
+            )
+            draw_race_number(ttkc.E)
+
+        def draw_bye() -> None:
+            assert race.is_bye(), f"Use {draw_normal_race.__name__}() for non-byes."
+            self._number_boxes = (
+                self.draw_number(
+                    x,
+                    y_centre,
+                    race.theoretical_winner(),
+                ),
+            )
+            self._lineset = BracketLineSetBye(
+                self._sheet.canvas,
+                bracket_x_start,
+                bracket_x_end,
+                y_centre,
+                race.theoretical_winner(),
+            )
+            draw_race_number(ttkc.SE)
+
+        if race.is_bye():
+            draw_bye()
+        else:
+            draw_normal_race()
+
+        # Arrows going from the race.
+        arrow_x = bracket_x_end - HORIZONTAL_LINE_LENGTH + TEXT_MARGIN
+        if race.loser_show_label:
+            assert (
+                race.loser_next_race is not None
+            ), "Show label is True for losers, but no losers to show."
+            self.draw_hint_to_arrow(
+                arrow_x,
+                y_centre + TEXT_MARGIN,
+                race.loser_next_race,
+                "Loser",
+                race.is_bye(),
+            )
+
+        if race.winner_show_label:
+            assert (
+                race.winner_next_race is not None
+            ), "Show label is True for winners, but no winners to show."
+            self.draw_hint_to_arrow(
+                arrow_x,
+                y_centre - TEXT_MARGIN,
+                race.winner_next_race,
+                "Winner",
+                race.is_bye(),
+                flip=-1,
+            )
+
+        right_side = bracket_x_end + TEXT_MARGIN
+
+        # Draw the results box if needed.
+        if show_result_box:
+            assert (
+                race.winner_next_race is not None
+            ), "There needs to be a winner_next_race when show_result_box is True."
+            branch = race.winner_next_race.get_branches(race)
+            assert len(branch) == 1, "There should only be a single branch provided."
+            self.draw_number(right_side, y_centre, branch[0])
+            right_side += LABEL_WIDTH
+
+        # Extend the line into the next round if needed.
+        return right_side
+
+    def update(self) -> None:
+        """Updates the elements in the drawing of the race."""
+        for number_box in self._number_boxes:
+            number_box.update(self._sheet.canvas)
+        self._lineset.update(self._sheet.canvas)
+
+
+class AuxilliaryRaceSheet:
+    """Class that draws the auxilliary races in their box."""
+
+    def __init__(
+        self,
+        sheet: KnockoutSheet,
+        event: KnockoutEvent,
+        numbers_factory: NumberBoxFactory,
+        top_left: Tuple[float, float],
+        bottom_right: Tuple[float, float],
+    ) -> None:
+        # Create a box to put the races in.
+        self._box = NotesBox(
+            canvas=sheet.canvas, top_left=top_left, bottom_right=bottom_right
+        )
+        self._box.add_text("Auxilliary races", (FONT, FONT_TITLE_SIZE))
+        self._box.add_text("Auxilliary races are only used if there is a DNR in a primary knockout race with two competitors.")
+
+        # Create and draw the races.
+        self._races: List[RaceDrawing] = []
+        for race in event.auxilliary_races.races:
+            drawing = RaceDrawing(
+                sheet=sheet,
+                event=event,
+                numbers_factory=numbers_factory,
+                show_seed=False,
+            )
+            self._races.append(drawing)
+            y_centre = self._box.y_pos + BRACKET_VERTICAL_SEPARATION
+            drawing.draw_race(top_left[0]+TEXT_MARGIN, y_centre, BRACKET_VERTICAL_SEPARATION, 1, race, False)
+            self._box.y_pos += 2*BRACKET_VERTICAL_SEPARATION
+    
+    def update(self):
+        for drawing in self._races:
+            drawing.update()

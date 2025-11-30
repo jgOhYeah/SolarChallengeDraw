@@ -21,6 +21,7 @@ from knockout import (
 from knockout_sheet_elements import (
     ARROW_HEIGHT,
     ARROW_WIDTH,
+    AUX_RACES_SECTION_WIDTH,
     BOTTOM_MARGIN,
     BRACKET_VERTICAL_SEPARATION,
     FIRST_COLUMN_HINT_WIDTH,
@@ -39,13 +40,15 @@ from knockout_sheet_elements import (
     TEXT_MARGIN,
     TOP_MARGIN,
     WINNERS_INITIAL_SPACING,
+    AuxilliaryRaceSheet,
     BracketLineSet,
     BracketLineSetBye,
     BracketLineSetNormal,
     NotesBox,
     NumberBox,
     NumberBoxFactory,
-    column_width
+    RaceDrawing,
+    COLUMN_WIDTH,
 )
 
 
@@ -64,9 +67,9 @@ class KnockoutSheet:
         SCALE = 1
         self._width = 297 * SCALE
         self._height = 210 * SCALE
-        self._canvas = ttk.Canvas(self._frame, width=self._width, height=self._height)
-        self._number_boxes: List[NumberBox] = []
-        self._lines: List[BracketLineSet] = []
+        self.canvas = ttk.Canvas(self._frame, width=self._width, height=self._height)
+        self._races: List[RaceDrawing] = []
+        self._aux_races: AuxilliaryRaceSheet
 
         # Add to the screen.
         if start_row is not None and start_column is not None:
@@ -80,38 +83,38 @@ class KnockoutSheet:
             start_column (int): The column to put the canvas in the grid of the frame.
         """
         # Scrolling by clicking and dragging.
-        self._canvas.bind(
-            "<ButtonPress-1>", lambda event: self._canvas.scan_mark(event.x, event.y)
+        self.canvas.bind(
+            "<ButtonPress-1>", lambda event: self.canvas.scan_mark(event.x, event.y)
         )
-        self._canvas.bind(
+        self.canvas.bind(
             "<B1-Motion>",
-            lambda event: self._canvas.scan_dragto(event.x, event.y, gain=1),
+            lambda event: self.canvas.scan_dragto(event.x, event.y, gain=1),
         )
 
         # Linux scrolling using the mousewheel and trackpad.
         # Based on https://stackoverflow.com/questions/17355902/tkinter-binding-mousewheel-to-scrollbar
         # Scrolling up and down.
-        self._canvas.bind("<4>", lambda event: self._canvas.yview_scroll(-1, "units"))
-        self._canvas.bind("<5>", lambda event: self._canvas.yview_scroll(1, "units"))
+        self.canvas.bind("<4>", lambda event: self.canvas.yview_scroll(-1, "units"))
+        self.canvas.bind("<5>", lambda event: self.canvas.yview_scroll(1, "units"))
 
         # Scrolling left and right.
-        self._canvas.bind(
-            "<Shift-4>", lambda event: self._canvas.xview_scroll(-1, "units")
+        self.canvas.bind(
+            "<Shift-4>", lambda event: self.canvas.xview_scroll(-1, "units")
         )
-        self._canvas.bind(
-            "<Shift-5>", lambda event: self._canvas.xview_scroll(1, "units")
+        self.canvas.bind(
+            "<Shift-5>", lambda event: self.canvas.xview_scroll(1, "units")
         )
 
         # Windows scrolling using the mousewheel and trackpad. # TODO: Test
-        self._canvas.bind(
+        self.canvas.bind(
             "<MouseWheel>",
-            lambda event: self._canvas.yview_scroll(
+            lambda event: self.canvas.yview_scroll(
                 int(-1 * (event.delta / 120)), "units"
             ),
         )
-        self._canvas.bind(
+        self.canvas.bind(
             "<Shift-MouseWheel>",
-            lambda event: self._canvas.yview_scroll(
+            lambda event: self.canvas.yview_scroll(
                 int(-1 * (event.delta / 120)), "units"
             ),
         )
@@ -119,19 +122,19 @@ class KnockoutSheet:
         # Scroll bars.
         # Based on https://stackoverflow.com/a/68723221
         self._x_scroll_bar = ttk.Scrollbar(
-            self._frame, orient="horizontal", command=self._canvas.xview
+            self._frame, orient="horizontal", command=self.canvas.xview
         )
         self._y_scroll_bar = ttk.Scrollbar(
-            self._frame, orient="vertical", command=self._canvas.yview
+            self._frame, orient="vertical", command=self.canvas.yview
         )
-        self._canvas.configure(
+        self.canvas.configure(
             yscrollcommand=self._y_scroll_bar.set, xscrollcommand=self._x_scroll_bar.set
         )
-        self._canvas.configure(scrollregion=(0, 0, self._width, self._height))
+        self.canvas.configure(scrollregion=(0, 0, self._width, self._height))
 
         self._x_scroll_bar.grid(row=start_row + 1, column=start_column, sticky="ew")
         self._y_scroll_bar.grid(row=start_row, column=start_column + 1, sticky="ns")
-        self._canvas.grid(row=start_row, column=start_column, sticky="nsew")
+        self.canvas.grid(row=start_row, column=start_column, sticky="nsew")
         self._frame.grid_rowconfigure(start_row, weight=1)
         self._frame.grid_columnconfigure(start_column, weight=1)
 
@@ -144,11 +147,19 @@ class KnockoutSheet:
             event (KnockoutEvent): The event to plot.
         """
         self._clear()
-        self.draw_tree(event, numbers, show_seed)
+        suptitle_bottom = self.draw_title(event)
+        self.draw_tree(
+            event=event,
+            numbers=numbers,
+            show_seed=show_seed,
+            x_offset=AUX_RACES_SECTION_WIDTH + LEFT_MARGIN + TEXT_MARGIN,
+            y_offset=suptitle_bottom
+        )
         self.draw_notes(event, self._width - RIGHT_MARGIN, self._height - BOTTOM_MARGIN)
+        self.draw_aux_races(event, numbers, suptitle_bottom)
 
     def draw_notes(self, event: KnockoutEvent, x: float, y: float) -> None:
-        notes_box = NotesBox(self._canvas, (x - 450, y - 300), (x, y))
+        notes_box = NotesBox(self.canvas, (x - 450, y - 300), (x, y))
         src_filename = os.path.join(os.path.dirname(__file__), "notes.md")
         notes_box.read_markdown(src_filename)
         notes_box.add_text(
@@ -156,236 +167,42 @@ class KnockoutSheet:
             bullet_point=True,
         )
 
+    def draw_aux_races(self, event: KnockoutEvent, numbers: NumberBoxFactory, y_offset:float) -> None:
+        top_left = (LEFT_MARGIN, y_offset)
+        bottom_right = (
+            LEFT_MARGIN + AUX_RACES_SECTION_WIDTH,
+            self._height - BOTTOM_MARGIN,
+        )
+        self._aux_races = AuxilliaryRaceSheet(
+            self, event, numbers, top_left, bottom_right
+        )
+
+    def draw_title(
+        self,
+        event: KnockoutEvent,
+    ) -> float:
+        """Draws the main title."""
+        # Titles
+        _, _, _, suptitle_bottom = self.canvas.bbox(
+            self.canvas.create_text(
+                LEFT_MARGIN,
+                TOP_MARGIN,
+                text=event.name,
+                font=(FONT, FONT_SUPTITLE_SIZE),
+                anchor=ttkc.NW,
+            )
+        )
+        return suptitle_bottom
+
     def draw_tree(
-        self, event: KnockoutEvent, numbers: NumberBoxFactory, show_seed: bool = True
+        self,
+        event: KnockoutEvent,
+        numbers: NumberBoxFactory,
+        show_seed: bool,
+        x_offset: float,
+        y_offset: float
     ) -> None:
         """Draws the tree of the knockout event on the canvas."""
-
-        def draw_number(x: float, y: float, race_branch: RaceBranch) -> None:
-            self._number_boxes.append(
-                numbers.create(self._canvas, x, y, race_branch, self)
-            )
-
-            # Draw the seed.
-            if show_seed:
-                self._canvas.create_text(
-                    x + SHORT_TEXT_MARGIN,
-                    y,
-                    anchor=ttkc.W,
-                    text=race_branch.seed,
-                    fill="red",
-                )
-
-            # Arrow hinting where the competitor came from.
-            show_label = False
-            text = ""
-            match race_branch.branch_result():
-                case BranchResult.WINNER:
-                    if (
-                        race_branch.prev_race is not None
-                        and race_branch.prev_race.winner_show_label
-                        and not isinstance(
-                            race_branch.prev_race.winner_next_race, Podium
-                        )
-                    ):
-                        # Show the winner's label.
-                        show_label = True
-                        text = "Winner"
-
-                case BranchResult.LOSER:
-                    if (
-                        race_branch.prev_race is not None
-                        and race_branch.prev_race.loser_show_label
-                        and not isinstance(
-                            race_branch.prev_race.loser_next_race, Podium
-                        )
-                    ):
-                        # Show the winner's label.
-                        show_label = True
-                        text = "Loser"
-
-            if show_label:
-                draw_hint_from_arrow(
-                    x - SHORT_TEXT_MARGIN, y, cast(Race, race_branch.prev_race), text
-                )
-
-        def draw_hint_to_arrow(
-            x: float,
-            y: float,
-            to_race: Race | Podium,
-            result_name: str,
-            if_dnr: bool = False,
-            flip: Literal[-1] | Literal[1] = 1,
-        ) -> None:
-            """Draws an arrow to show where to proceed from a race."""
-            points = [
-                x,
-                y,
-                x + ARROW_WIDTH / 3,
-                y + ARROW_HEIGHT * flip,
-                x + 2 * ARROW_WIDTH / 3,
-                y + ARROW_HEIGHT * flip,
-                x + ARROW_WIDTH,
-                y + ARROW_HEIGHT * flip,
-            ]
-            self._canvas.create_line(points, arrow="last", smooth=True)
-            if_dnr_text = ""
-            if if_dnr:
-                if_dnr_text = " if DNR"
-
-            self._canvas.create_text(
-                x + ARROW_WIDTH + SHORT_TEXT_MARGIN,
-                y + ARROW_HEIGHT * flip,
-                text=f"{result_name} to {to_race.name()}{if_dnr_text}",
-                anchor=ttkc.W,
-                font=(FONT, FONT_SMALL_SIZE),
-            )
-
-        def draw_hint_from_arrow(
-            x: float,
-            y: float,
-            from_race: Race | Podium,
-            result_name: str,
-            if_dnr: bool = False,
-        ) -> None:
-            """Draws and arrow to show which race a competitor is coming from.
-            This complements draw_hint_to_arrow().
-
-            Args:
-                x (float): The x coordinate for the RIGHT side of the label.
-                y (float): The y centre coordinate.
-                from_race (Race | Podium): The race the arrow is coming from.
-                result_name (str): "Winner" or "Loser"
-                if_dnr (bool, optional): Adds an "if DNR" qualifier. Defaults to False.
-            """
-            points = [x - ARROW_WIDTH, y, x, y]
-            self._canvas.create_line(points, arrow="last", smooth=True)
-
-            if_dnr_text = ""
-            if if_dnr:
-                if_dnr_text = " if DNR"
-
-            text_left_x, _, _, _ = self._canvas.bbox(
-                self._canvas.create_text(
-                    x - ARROW_WIDTH - SHORT_TEXT_MARGIN,
-                    y,
-                    text=f"{result_name} from {from_race.name()}{if_dnr_text}",
-                    anchor=ttkc.E,
-                    font=(FONT, FONT_SMALL_SIZE),
-                )
-            )
-
-        def draw_race(
-            x: float, y_centre: float, y_spacing: float, columns_wide: int, race: Race
-        ) -> float:
-            """Draws a race.
-
-            Args:
-                x (float): The x location of the left side of the race.
-                y_centre (float): The centreline of the race.
-                y_spacing (float): The spacing between the inputs of the race.
-                columns_wide (int): The number of columns wide to made the bracket.
-                race (Race): The race to draw.
-
-            Returns:
-                float: The x coordinate of the right side of the race.
-            """
-            bracket_x_start = x + LABEL_WIDTH + TEXT_MARGIN
-            bracket_x_end = (
-                bracket_x_start
-                + 2 * HORIZONTAL_LINE_LENGTH
-                + (columns_wide - 1) * column_width
-            )
-
-            def draw_race_number(
-                anchor: Literal["nw", "n", "ne", "w", "center", "e", "sw", "s", "se"],
-            ) -> None:
-                """Draws the race number."""
-                self._canvas.create_text(
-                    bracket_x_end - HORIZONTAL_LINE_LENGTH - SHORT_TEXT_MARGIN,
-                    y_centre,
-                    anchor=anchor,
-                    text=race.name(),
-                )
-
-            def draw_normal_race() -> None:
-                top_y = y_centre - y_spacing / 2
-                bottom_y = y_centre + y_spacing / 2
-                assert not race.is_bye(), f"Use {draw_bye.__name__}() for a bye."
-                draw_number(
-                    x,
-                    top_y,
-                    race.left_branch,
-                )
-                draw_number(
-                    x,
-                    bottom_y,
-                    race.right_branch,
-                )
-                self._lines.append(
-                    BracketLineSetNormal(
-                        self._canvas,
-                        bracket_x_start,
-                        bracket_x_end,
-                        y_centre,
-                        (race.left_branch, race.right_branch),
-                        y_spacing,
-                    )
-                )
-                draw_race_number(ttkc.E)
-
-            def draw_bye() -> None:
-                assert race.is_bye(), f"Use {draw_normal_race.__name__}() for non-byes."
-                draw_number(
-                    x,
-                    y_centre,
-                    race.theoretical_winner(),
-                )
-                self._lines.append(
-                    BracketLineSetBye(
-                        self._canvas,
-                        bracket_x_start,
-                        bracket_x_end,
-                        y_centre,
-                        race.theoretical_winner(),
-                    )
-                )
-                draw_race_number(ttkc.SE)
-
-            if race.is_bye():
-                draw_bye()
-            else:
-                draw_normal_race()
-
-            # Arrows going from the race.
-            arrow_x = bracket_x_end - HORIZONTAL_LINE_LENGTH + TEXT_MARGIN
-            if race.loser_show_label:
-                assert (
-                    race.loser_next_race is not None
-                ), "Show label is True for losers, but no losers to show."
-                draw_hint_to_arrow(
-                    arrow_x,
-                    y_centre + TEXT_MARGIN,
-                    race.loser_next_race,
-                    "Loser",
-                    race.is_bye(),
-                )
-
-            if race.winner_show_label:
-                assert (
-                    race.winner_next_race is not None
-                ), "Show label is True for winners, but no winners to show."
-                draw_hint_to_arrow(
-                    arrow_x,
-                    y_centre - TEXT_MARGIN,
-                    race.winner_next_race,
-                    "Winner",
-                    race.is_bye(),
-                    flip=-1,
-                )
-
-            # Extend the line into the next round if needed.
-            return bracket_x_end + TEXT_MARGIN
 
         def round_height(round: List[Race], y_spacing: float) -> float:
             """Calculates the height of a round.
@@ -431,8 +248,8 @@ class KnockoutSheet:
             preferred_text_location = y_centre - (height / 2) - offset
             text_y_bottom = min(next_round_top, preferred_text_location) - TEXT_MARGIN
 
-            _, text_y_top, _, _ = self._canvas.bbox(
-                self._canvas.create_text(
+            _, text_y_top, _, _ = self.canvas.bbox(
+                self.canvas.create_text(
                     box_centre,
                     text_y_bottom,
                     anchor=ttkc.S,
@@ -442,7 +259,7 @@ class KnockoutSheet:
                     fill=TEXT_FILL,
                 )
             )
-            rect = self._canvas.create_rectangle(
+            rect = self.canvas.create_rectangle(
                 box_centre - box_half_width,
                 text_y_top - TEXT_MARGIN,
                 box_centre + box_half_width,
@@ -451,7 +268,7 @@ class KnockoutSheet:
                 fill=BOX_FILL,
                 outline=BOX_FILL,
             )
-            self._canvas.tag_lower(rect)
+            self.canvas.tag_lower(rect)
 
         def draw_round(
             x: float,
@@ -459,6 +276,7 @@ class KnockoutSheet:
             y_spacing: float,
             round: List[Race],
             columns_wide: int,
+            show_result_box: bool,
         ) -> float:
             """Draws a round in either the winners' or losers' brackets.
 
@@ -468,6 +286,8 @@ class KnockoutSheet:
                 y_spacing (float): The y spacing between branches in the round.
                 round (List[Race]): The round itself.
                 columns_wide (int): The number of columns wide to draw the round to make it line up correctly.
+                show_result_box (bool): When True, draws the result of the race
+                    next to it (only enable for the grand final and auxilliary races).
 
             Returns:
                 float: The x coordinate of the right side of the races in the round.
@@ -476,7 +296,11 @@ class KnockoutSheet:
             x_end = -1.0
             for i, race in enumerate(round):
                 race_y_centre = (i + 0.5 - len(round) / 2) * y_spacing + y_centre
-                x_end = draw_race(x, race_y_centre, y_spacing / 2, columns_wide, race)
+                race_drawing = RaceDrawing(self, event, numbers, show_seed)
+                self._races.append(race_drawing)
+                x_end = race_drawing.draw_race(
+                    x, race_y_centre, y_spacing / 2, columns_wide, race, show_result_box
+                )
 
             return x_end
 
@@ -494,27 +318,28 @@ class KnockoutSheet:
                 # Make the round a single column wide for the first and second rounds, 2 for all subsequent to line up with the losers' round.
                 cols_wide = 1 if i < 2 else 2
                 next_x = draw_round(
-                    next_x,
-                    y_centre,
-                    y_spacing(i),
-                    round,
+                    x=next_x,
+                    y_centre=y_centre,
+                    y_spacing=y_spacing(i),
+                    round=round,
                     columns_wide=cols_wide,
+                    show_result_box=False,
                 )
                 draw_round_box(
-                    next_x,
-                    y_centre,
-                    round_height(round, y_spacing(i)),
-                    0,
-                    (
+                    x_end=next_x,
+                    y_centre=y_centre,
+                    height=round_height(round, y_spacing(i)),
+                    offset=0,
+                    next_round_height=(
                         0
                         if i + 1 == len(rounds)
                         else round_height(rounds[i + 1], y_spacing(i + 1))
                     ),
-                    0,
-                    f"P{i+1}",
+                    next_round_offset=0,
+                    round_name=f"P{i+1}",
                 )
 
-            return x + len(rounds) * column_width, y_centre
+            return x + len(rounds) * COLUMN_WIDTH, y_centre
 
         def draw_losers_bracket(
             x: float,
@@ -552,11 +377,12 @@ class KnockoutSheet:
             next_x = x
             for i, round in enumerate(rounds):
                 next_x = draw_round(
-                    next_x,
-                    y_centre - y_offset(i),
-                    y_spacing(i),
-                    round,
+                    x=next_x,
+                    y_centre=y_centre - y_offset(i),
+                    y_spacing=y_spacing(i),
+                    round=round,
                     columns_wide=1,
+                    show_result_box=False,
                 )
                 draw_round_box(
                     next_x,
@@ -572,7 +398,7 @@ class KnockoutSheet:
                     f"SC{i+1}",
                 )
 
-            return x + len(rounds) * column_width, y_centre - y_offset(len(rounds))
+            return x + len(rounds) * COLUMN_WIDTH, y_centre - y_offset(len(rounds))
 
         def draw_grand_final(
             winners_end: Tuple[float, float], losers_end: Tuple[float, float]
@@ -590,48 +416,35 @@ class KnockoutSheet:
             gf_y_centre = (winners_end[1] + losers_end[1]) / 2
             gf_y_spacing = 2 * (losers_end[1] - winners_end[1])
             right_side = draw_round(
-                max(winners_end[0], losers_end[0]),
-                gf_y_centre,
-                gf_y_spacing,
-                [event.grand_final],
-                1,
+                x=max(winners_end[0], losers_end[0]),
+                y_centre=gf_y_centre,
+                y_spacing=gf_y_spacing,
+                round=[event.grand_final],
+                columns_wide=1,
+                show_result_box=True,
             )
             draw_round_box(
-                right_side,
-                gf_y_centre,
-                round_height([event.grand_final], gf_y_spacing),
-                0,
-                0,
-                0,
-                f"Grand final",
+                x_end=right_side,
+                y_centre=gf_y_centre,
+                height=round_height([event.grand_final], gf_y_spacing),
+                offset=0,
+                next_round_height=0,
+                next_round_offset=0,
+                round_name=f"Grand final",
             )
 
-            # Add a results box.
+            # Check the results box.
             assert isinstance(
                 event.grand_final.winner_next_race, Podium
             ), "The winner of the grand final must end up with a podium."
-            draw_number(
-                right_side, gf_y_centre, event.grand_final.winner_next_race.branch
-            )
 
             return right_side + TEXT_MARGIN + LABEL_WIDTH
 
-        # Titles
-        _, _, _, suptitle_bottom = self._canvas.bbox(
-            self._canvas.create_text(
-                LEFT_MARGIN,
-                TOP_MARGIN,
-                text=event.name,
-                font=(FONT, FONT_SUPTITLE_SIZE),
-                anchor=ttkc.NW,
-            )
-        )
-
         # Winners' bracket.
-        _, _, _, winners_title_bottom = self._canvas.bbox(
-            self._canvas.create_text(
-                LEFT_MARGIN,
-                suptitle_bottom + TEXT_MARGIN,
+        _, _, _, winners_title_bottom = self.canvas.bbox(
+            self.canvas.create_text(
+                x_offset,
+                y_offset + TEXT_MARGIN,
                 text="Primary draw",
                 font=(FONT, FONT_TITLE_SIZE),
                 anchor=ttkc.NW,
@@ -642,7 +455,7 @@ class KnockoutSheet:
             winners_title_bottom + TEXT_MARGIN + winners_height / 2 + LABEL_HEIGHT / 2
         )
         win_end = draw_winners_bracket(
-            LEFT_MARGIN + FIRST_COLUMN_HINT_WIDTH,
+            x_offset + FIRST_COLUMN_HINT_WIDTH,
             winners_centreline,
             WINNERS_INITIAL_SPACING,
             event.winners_bracket,
@@ -655,9 +468,9 @@ class KnockoutSheet:
             + LABEL_HEIGHT
             + BRACKET_VERTICAL_SEPARATION
         )
-        _, _, _, losers_title_bottom = self._canvas.bbox(
-            self._canvas.create_text(
-                LEFT_MARGIN,
+        _, _, _, losers_title_bottom = self.canvas.bbox(
+            self.canvas.create_text(
+                x_offset,
                 winners_bottom + TEXT_MARGIN,
                 text="Second chance draw",
                 font=(FONT, FONT_TITLE_SIZE),
@@ -669,7 +482,7 @@ class KnockoutSheet:
             losers_title_bottom + TEXT_MARGIN + losers_height / 2 + LABEL_HEIGHT / 2
         )
         lose_end = draw_losers_bracket(
-            LEFT_MARGIN + FIRST_COLUMN_HINT_WIDTH,
+            x_offset + FIRST_COLUMN_HINT_WIDTH,
             losers_centreline,
             LOSERS_INITIAL_SPACING,
             event.losers_bracket,
@@ -677,7 +490,7 @@ class KnockoutSheet:
 
         def mark_line(y: float) -> None:
             """Marks a y coordinate for debugging purposes."""
-            self._canvas.create_line(0, y, self._width, y, fill="red")
+            self.canvas.create_line(0, y, self._width, y, fill="red")
 
         # Grand final
         drawing_width = draw_grand_final(win_end, lose_end) + RIGHT_MARGIN
@@ -692,20 +505,18 @@ class KnockoutSheet:
         # print("Not updating here.")
 
         # def manual_update(self) -> None:
-        for box in self._number_boxes:
-            box.update(self._canvas)
-
-        for line_set in self._lines:
-            line_set.update(self._canvas)
+        for drawing in self._races:
+            drawing.update()
+        
+        self._aux_races.update()
 
         # self._frame.after(2000, self.manual_update)
 
     def _clear(self) -> None:
         """Clears everything from the canvas.
         This may not be 100% memory leak free, so minimise the use of this."""
-        self._canvas.delete("all")
-        self._number_boxes.clear()
-        self._lines.clear()
+        self.canvas.delete("all")
+        self._races = []
 
     def a_paper_scale(self, min_dimensions: Tuple[float, float]) -> Tuple[float, float]:
         """Calculates the minimum size in the A paper ratio."""
@@ -717,8 +528,8 @@ class KnockoutSheet:
     def set_size(self, dimensions: Tuple[float, float]) -> None:
         """Sets the size of the canvas."""
         width, height = dimensions
-        self._canvas.config(width=width, height=height)
-        self._canvas.config(scrollregion=(0, 0, width, height))
+        self.canvas.config(width=width, height=height)
+        self.canvas.config(scrollregion=(0, 0, width, height))
         self._width = width
         self._height = height
         print(f"New size: {dimensions}")
@@ -742,10 +553,10 @@ class KnockoutSheet:
         # Export as postscript.
         postscript_file = output + ".ps"
         pdf_file = output + ".pdf"
-        self._canvas.update()
+        self.canvas.update()
         postscript = cast(
             str,
-            self._canvas.postscript(
+            self.canvas.postscript(
                 x=0,
                 y=0,
                 width=self._width,

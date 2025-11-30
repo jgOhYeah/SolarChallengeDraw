@@ -59,9 +59,21 @@ class RaceBranch:
     car: Car | None = None
     filled: bool = False
 
-    def is_editable(self) -> bool:
-        """Checks if the race branch is editable."""
-        ok_type = self.branch_type == BranchType.DEPENDENT_EDITABLE
+    def is_editable(self, override_type_editable: bool = False) -> bool:
+        """Checks if the race branch is editable.
+
+        Args:
+            override_type_editable (bool, optional): If True, treats
+                BranchType.DEPENDENT_NOT_EDITABLE as if it were
+                BranchType.DEPENDENT_EDITABLE. Defaults to False.
+
+        Returns:
+            bool: Whether the branch is allowed to be edited.
+        """
+        ok_type = self.branch_type == BranchType.DEPENDENT_EDITABLE or (
+            override_type_editable
+            and self.branch_type == BranchType.DEPENDENT_NOT_EDITABLE
+        )
         all_competitors_available = True
         if self.prev_race is not None:
             # We need to check the previous race.
@@ -187,6 +199,12 @@ class Winnable(ABC):
             Tuple[RaceBranch] | Tuple[RaceBranch, RaceBranch]: One or more branches.
         """
         pass
+
+    def get_single_branch(self, filter_prev_race: Race) -> RaceBranch:
+        """Like get_branches, but forces a previous race and returns a single branch."""
+        branch = self.get_branches(filter_prev_race)
+        assert len(branch) == 1, "There should only be a single branch provided."
+        return branch[0]
 
     @abstractmethod
     def get_expected_competitors(self, min_fill_probability: FillProbability) -> int:
@@ -335,7 +353,7 @@ class Race(Winnable):
         winner_show_label: bool = False,
         loser_show_label: bool = False,
         is_auxilliary_race: bool = False,
-        race_number: int = 0
+        race_number: int = 0,
     ):
         self.left_branch = left_branch
         self.right_branch = right_branch

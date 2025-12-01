@@ -1,9 +1,11 @@
 import os
 import sys
 
+from typing import Tuple
 sys.path.insert(
     0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../SolarChallengeDraw"))
 )
+from knockout_race import *
 from knockout import *
 from car import *
 import unittest
@@ -149,13 +151,15 @@ class TestRace(unittest.TestCase):
             "This race should not be editable without cars.",
         )
 
+        aux_race_manager = AuxilliaryRaceManager(1)
+
         # Add some winners.
         assert (
             left_race.left_branch.car is not None
             and right_race.left_branch.car is not None
         ), "Initial competitors incorrect."
-        left_race.set_winner(left_race.left_branch.car.car_id)
-        right_race.set_winner(right_race.left_branch.car.car_id)
+        left_race.set_winner(left_race.left_branch.car.car_id, aux_race_manager)
+        right_race.set_winner(right_race.left_branch.car.car_id, aux_race_manager)
 
         # print(left_race, right_race)
         # print(winner_race, loser_race)
@@ -186,7 +190,7 @@ class TestRace(unittest.TestCase):
 
         # Set competitors for one side of winner.
         assert left_race.left_branch.car is not None, "Testing error"
-        left_race.set_winner(left_race.left_branch.car.car_id)
+        left_race.set_winner(left_race.left_branch.car.car_id, AuxilliaryRaceManager(1))
 
         # Tests with a single competitor filled.
         self.assertFalse(
@@ -216,7 +220,7 @@ class TestRace(unittest.TestCase):
 
         # Fill the second competitor.
         assert right_race.left_branch.car is not None, "Testing error"
-        right_race.set_winner(right_race.left_branch.car.car_id)
+        right_race.set_winner(right_race.left_branch.car.car_id, AuxilliaryRaceManager(1))
 
         # Tests with both competitors filled.
         self.assertTrue(
@@ -299,7 +303,7 @@ class TestEvent(unittest.TestCase):
             Car(105, 3, "Munching mouse", True, True, True, 4),
             Car(106, 3, "Busy bee", True, True, True, 4)
         ]
-        event = KnockoutEvent(cars, "Test")
+        event = KnockoutEvent(cars, "Test", 1)
 
 if __name__ == "__main__":
     # race = TestRace()

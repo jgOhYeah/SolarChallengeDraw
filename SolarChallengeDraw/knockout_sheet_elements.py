@@ -63,6 +63,7 @@ class NumberBox(ABC):
         race_branch: RaceBranch | None,
         aux_race_manager: AuxilliaryRaceManager,
         sheet: KnockoutSheet,
+        override_type_editable: bool
     ) -> None:
         """Initialises the number box.
 
@@ -76,6 +77,7 @@ class NumberBox(ABC):
         self._race_branch = race_branch
         self._aux_race_manager = aux_race_manager
         self._sheet = sheet
+        self._override_type_editable = override_type_editable
         self._draw(x, y)
 
     @abstractmethod
@@ -116,7 +118,7 @@ class NumberBox(ABC):
                 values = []
 
             if (
-                not self._race_branch.is_editable()
+                not self._race_branch.is_editable(self._override_type_editable)
                 and self._race_branch.fill_probability() == FillProbability.IMPOSSIBLE
             ):
                 # It is impossible to fill this and we can add a N/A without being noticed.
@@ -185,8 +187,7 @@ class InteractiveNumberBox(NumberBox):
                 BranchType.DEPENDENT_NOT_EDITABLE as
                 BranchType.DEPENDENT_EDITABLE. Defaults to False.
         """
-        self._override_type_editable = override_type_editable
-        super().__init__(x, y, race_branch, aux_race_manager, sheet)
+        super().__init__(x, y, race_branch, aux_race_manager, sheet, override_type_editable)
         self._in_update = False  # Signals if a change to the combobox should be ignored (somewhat like a semaphore).
 
     def _combobox_state(self) -> str:
@@ -370,7 +371,7 @@ class NumberBoxFactory(ABC):
                 x, y, race_branch, aux_race_manager, sheet, override_type_editable
             )
         else:
-            return InitialNumberBox(x, y, race_branch, aux_race_manager, sheet)
+            return InitialNumberBox(x, y, race_branch, aux_race_manager, sheet, override_type_editable)
 
 
 class InteractiveNumberBoxFactory(NumberBoxFactory):
@@ -403,7 +404,7 @@ class PrintNumberBoxFactory(NumberBoxFactory):
         sheet: KnockoutSheet,
         override_type_editable: bool = False,
     ) -> NumberBox:
-        return PrintNumberBox(x, y, race_branch, aux_race_manager, sheet)
+        return PrintNumberBox(x, y, race_branch, aux_race_manager, sheet, override_type_editable)
 
 
 def fill_probability_style(
@@ -938,17 +939,16 @@ class RaceDrawing:
 
         # Draw the results box if needed.
         if show_result_box:
-            if race.winner_next_race is None:
-                self._results_box = self.draw_number(
-                    right_side, y_centre, None, override_type_editable=True
-                )
-            else:
-                self._results_box = self.draw_number(
-                    x=right_side,
-                    y=y_centre,
-                    race_branch=race.winner_next_race.get_single_branch(race),
-                    override_type_editable=True,
-                )
+            self._results_box = self.draw_number(
+                x=right_side,
+                y=y_centre,
+                race_branch=(
+                    race.winner_next_race.get_single_branch(race)
+                    if race.winner_next_race is not None
+                    else None
+                ),
+                override_type_editable=True,
+            )
             right_side += LABEL_WIDTH
 
         # Extend the line into the next round if needed.
@@ -982,6 +982,10 @@ class RaceDrawing:
         """Updates the elements in the drawing of the race."""
         for number_box in self._number_boxes:
             number_box.update()
+        
+        if self._results_box is not None:
+            self._results_box.update()
+
         self._lineset.update()
 
 
@@ -1035,6 +1039,9 @@ class AuxilliaryRaceSheet:
             )
             self._box.y_pos += 2 * BRACKET_VERTICAL_SEPARATION
 
+        self._event = event
+
     def update(self):
-        for drawing in self._races:
+        for race, drawing in zip(self._event.auxilliary_races.races, self._races):
+            drawing.assign_race(race)
             drawing.update()

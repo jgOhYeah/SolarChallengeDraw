@@ -156,15 +156,23 @@ class RaceBranch:
                     assert (
                         self.prev_race is not None
                     ), "The branch is the result of a loss, so there should be a previous race."
-                    if (
-                        self.prev_race.get_expected_competitors(FillProbability.LIKELY)
-                        == 2
+                    match self.prev_race.get_expected_competitors(
+                        FillProbability.LIKELY
                     ):
-                        # Both competitors are likely to be filled, so we will probably have a loser.
-                        return FillProbability.LIKELY
-                    else:
-                        # Not likely to be filled as there aren't enough likely competitors to fill a loser.
-                        return FillProbability.UNLIKELY
+                        case 2:
+                            # Both competitors are likely to be filled, so we will probably have a loser.
+                            return FillProbability.LIKELY
+                        case 1:
+                            # Not likely to be filled as there aren't enough likely competitors to fill a loser.
+                            return FillProbability.UNLIKELY
+                        case 0:
+                            # No competitors as the previous race is impossible.
+                            return FillProbability.IMPOSSIBLE
+                        case _:
+                            raise LookupError(
+                                "There shouldn't be more than 2 competitors."
+                            )
+
                 case BranchResult.NEITHER:
                     return car_assign_prob()
 
@@ -294,7 +302,7 @@ class Podium(Winnable):
         self.position = position
         self.branch: RaceBranch = RaceBranch(
             seed=position,
-            branch_type=BranchType.DEPENDENT_EDITABLE,
+            branch_type=BranchType.DEPENDENT_NOT_EDITABLE,
             prev_race=prev_race,
             car=car,
         )
@@ -459,12 +467,13 @@ class Race(Winnable):
 
         def add_dnr():
             # This is a DNR - (no winner).
+            optional_update(self.winner_next_race, None, True)
             if (
                 self.loser_next_race is not None
                 and not self.loser_next_race.is_auxilliary_race
             ):
+                # There is a loser's race we need to deal with.
                 # We don't already have an auxilliary race in place and are allowed to add one.
-                optional_update(self.winner_next_race, None, True)
                 options = self.get_options()
                 if len(options) == 2:
                     # We need to add an auxilliary race as we have 2 competitors vying to win the losing spot.
@@ -484,11 +493,13 @@ class Race(Winnable):
             and car_number != self.WINNER_DNR
         ):
             # The race was, but is no longer a DNR.
+            print(f"Freeing auxilliary race after race {self.name()}.")
             auxilliary_manager.free_race(self)
 
         # Options and actions.
         if car_number == self.WINNER_DNR:
             # Both failed to run.
+            print(f"Adding DNR as a result for race {self.name()}")
             add_dnr()
 
         elif (

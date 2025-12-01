@@ -359,11 +359,11 @@ class AuxilliaryRaceManager:
             prev_race.get_expected_competitors(FillProbability.UNLIKELY) == 2
         ), "This function needs to be called on a race with 2 competitors that did not run."
         aux_race = self._get_first_free()
-        self.insert(prev_race, aux_race)
+        self._insert(prev_race, aux_race)
         return aux_race
 
     @classmethod
-    def insert(cls, prev_race: Race, aux_race: Race) -> None:
+    def _insert(cls, prev_race: Race, aux_race: Race) -> None:
         """Inserts the auxilliary race in between the loser of the provided race
         and the loser next race.
 
@@ -396,7 +396,7 @@ class AuxilliaryRaceManager:
         # Point forwards from the previous race to the auxilliary race.
         prev_race.loser_next_race = aux_race
 
-    def remove(self, prev_race: Race) -> None:
+    def _remove(self, prev_race: Race) -> None:
         """Removes the auxilliary race from the previous one.
 
         Args:
@@ -435,9 +435,8 @@ class AuxilliaryRaceManager:
 
     def free_race(self, prev_race: Race) -> None:
         print(f"Freeing aux. race {prev_race.loser_next_race} from {prev_race}")
-        self.remove(prev_race)
+        self._remove(prev_race)
         # TODO: Reorganise / shuffle.
-
 
 class KnockoutEvent:
     """A class that contains all races for the knockout event."""
@@ -529,6 +528,8 @@ class KnockoutEvent:
 
     def print(self) -> None:
         """Prints the event to the terminal."""
+        print("Auxilliary races")
+        print_bracket([self.auxilliary_races.races])
         print("Winners:")
         print_bracket(self.winners_bracket)
         print()

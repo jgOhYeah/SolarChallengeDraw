@@ -424,7 +424,7 @@ class KnockoutSheet:
                 show_result_box=True,
             )
             draw_round_box(
-                x_end=right_side,
+                x_end=right_side - LABEL_WIDTH,
                 y_centre=gf_y_centre,
                 height=round_height([event.grand_final], gf_y_spacing),
                 offset=0,

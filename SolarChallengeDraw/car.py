@@ -39,7 +39,6 @@ def load_cars(csv_filename: str) -> List[Car]:
     Returns:
         List[Car]: The list of cars.
     """
-    print(csv_filename)
     df = pd.read_csv(csv_filename)
     cars: List[Car] = []
     for _, row in df.iterrows():

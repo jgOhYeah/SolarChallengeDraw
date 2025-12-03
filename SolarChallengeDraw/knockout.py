@@ -193,11 +193,16 @@ def create_loosers_draw(winners: List[List[Race]]) -> List[List[Race]]:
 
     return losers
 
+def randomise_cars(cars: List[Car]) -> List[Car]:
+    """Randomises the cars."""
+    rng = np.random.default_rng()
+    order = rng.permutation(len(cars))
+    return [cars[i] for i in order]
 
-def assign_cars(cars: List[Car], first_round: List[Race]) -> None:
+def assign_cars(cars: List[Car], first_round: List[Race], reverse:bool=True) -> None:
     """Assigns cars to the first round of the draw."""
     sorted_cars: List[Car | None] = sorted(
-        cars, key=lambda c: cast(Car, c).points, reverse=False
+        cars, key=lambda c: cast(Car, c).points, reverse=True
     )  # Set reverse to True to reward higher rather than lower points.
     byes = 2 * len(first_round) - len(sorted_cars)
     sorted_cars.extend([None] * byes)
@@ -288,7 +293,8 @@ class RoundType(StrEnum):
     """Enumerator that represents the type of a round."""
 
     WINNERS = "P"  # P for primary knockout.
-    LOSERS = "SC"  # SC for secondary knockout.
+    LOSERS = "SC"  # SC for secondary knockout.,
+    AUXILLIARY = "Auxilliary"
     GRAND_FINAL = "Grand final"
 
 
@@ -522,9 +528,10 @@ class KnockoutEvent:
                 return check_length(self.winners_bracket)
             case RoundType.LOSERS:
                 return check_length(self.losers_bracket)
-
             case RoundType.GRAND_FINAL:
                 return [self.grand_final]
+            case RoundType.AUXILLIARY:
+                return self.auxilliary_races.races
 
     def print(self) -> None:
         """Prints the event to the terminal."""

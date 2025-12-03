@@ -153,7 +153,7 @@ class KnockoutSheet:
             numbers=numbers,
             show_seed=show_seed,
             x_offset=AUX_RACES_SECTION_WIDTH + LEFT_MARGIN + TEXT_MARGIN,
-            y_offset=suptitle_bottom
+            y_offset=suptitle_bottom,
         )
         self.draw_notes(event, self._width - RIGHT_MARGIN, self._height - BOTTOM_MARGIN)
         self.draw_aux_races(event, numbers, suptitle_bottom)
@@ -167,7 +167,9 @@ class KnockoutSheet:
             bullet_point=True,
         )
 
-    def draw_aux_races(self, event: KnockoutEvent, numbers: NumberBoxFactory, y_offset:float) -> None:
+    def draw_aux_races(
+        self, event: KnockoutEvent, numbers: NumberBoxFactory, y_offset: float
+    ) -> None:
         top_left = (LEFT_MARGIN, y_offset)
         bottom_right = (
             LEFT_MARGIN + AUX_RACES_SECTION_WIDTH,
@@ -200,7 +202,7 @@ class KnockoutSheet:
         numbers: NumberBoxFactory,
         show_seed: bool,
         x_offset: float,
-        y_offset: float
+        y_offset: float,
     ) -> None:
         """Draws the tree of the knockout event on the canvas."""
 
@@ -507,7 +509,7 @@ class KnockoutSheet:
         # def manual_update(self) -> None:
         for drawing in self._races:
             drawing.update()
-        
+
         self._aux_races.update()
 
         # self._frame.after(2000, self.manual_update)
@@ -532,7 +534,6 @@ class KnockoutSheet:
         self.canvas.config(scrollregion=(0, 0, width, height))
         self._width = width
         self._height = height
-        print(f"New size: {dimensions}")
 
     def export(
         self,
@@ -542,6 +543,7 @@ class KnockoutSheet:
         pdf_height_mm: float,
         save_ps: bool = False,
         generate_pdf: bool = True,
+        surpress_output: bool = False,
     ) -> None:
         """Exports the canvas as postscript to a file."""
         # Remove the extension if it is one we recognise.
@@ -590,7 +592,13 @@ class KnockoutSheet:
                 "-dFitPage",
                 "-",
             ]
-            print(" ".join(args))
-            process = subprocess.Popen(args, stdin=subprocess.PIPE)
+            if not surpress_output:
+                print(" ".join(args))
+                
+            process = subprocess.Popen(
+                args,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.DEVNULL if surpress_output else None,
+            )
             process.communicate(postscript, timeout=30)
             process.wait()

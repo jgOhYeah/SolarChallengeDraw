@@ -1,3 +1,9 @@
+# Literature
+literature/images/*.pdf
+
+# Testing
+testing/*.ps
+
 # Database
 SolarChallengeDraw.sqbpro
 *.sqlite

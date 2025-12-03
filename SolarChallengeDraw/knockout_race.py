@@ -421,7 +421,10 @@ class Race(Winnable):
         Returns:
             bool: True when the race is a bye.
         """
-        return self.get_expected_competitors(FillProbability.UNLIKELY) == 1
+        return self.get_expected_competitors(FillProbability.UNLIKELY) == 1 and (
+            self.left_branch.branch_type == BranchType.FIXED
+            or self.right_branch.branch_type == BranchType.FIXED
+        )
 
     WINNER_EMPTY = -1
     WINNER_DNR = -2

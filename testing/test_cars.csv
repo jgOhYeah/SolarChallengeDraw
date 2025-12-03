@@ -1,0 +1,7 @@
+Car ID,School ID,Car name,Scruitineered,Present for round robin,Present for knockout,Points
+101,1,Flying fish,True,True,True,1
+102,1,Curious cat,True,True,True,2
+103,1,Hungry horse,True,True,True,3
+104,2,Percy penguin,True,True,True,3
+105,3,Munching mouse,True,True,True,4
+106,3,Busy bee,True,True,True,5

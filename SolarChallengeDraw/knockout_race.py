@@ -358,8 +358,6 @@ class Race(Winnable):
         right_branch: RaceBranch,
         winner_next_race: Race | Podium | None = None,
         loser_next_race: Race | Podium | None = None,
-        winner_show_label: bool = False,
-        loser_show_label: bool = False,
         is_auxilliary_race: bool = False,
         race_number: int = 0,
     ):
@@ -367,8 +365,6 @@ class Race(Winnable):
         self.right_branch = right_branch
         self.winner_next_race: Race | Podium | None = winner_next_race
         self.loser_next_race: Race | Podium | None = loser_next_race
-        self.winner_show_label = winner_show_label
-        self.loser_show_label = loser_show_label
         self.race_number: int = race_number
         self._is_auxilliary_race = is_auxilliary_race
 
@@ -407,10 +403,17 @@ class Race(Winnable):
             Tuple[RaceBranch] | Tuple[RaceBranch, RaceBranch]: One or more branches.
         """
         if filter_prev_race is None:
+            # Not filtering, everything.
             return self.left_branch, self.right_branch
         elif filter_prev_race is self.left_branch.prev_race:
-            return (self.left_branch,)
+            if filter_prev_race is self.right_branch.prev_race:
+                # Both branches point to the same previous race (used in auxilliary races).
+                return self.left_branch, self.right_branch
+            else:
+                # Left only.
+                return (self.left_branch,)
         elif filter_prev_race is self.right_branch.prev_race:
+            # Right only.
             return (self.right_branch,)
         else:
             raise ValueError("The provided previous race is not a previous race.")
@@ -496,13 +499,11 @@ class Race(Winnable):
             and car_number != self.WINNER_DNR
         ):
             # The race was, but is no longer a DNR.
-            print(f"Freeing auxilliary race after race {self.name()}.")
             auxilliary_manager.free_race(self)
 
         # Options and actions.
         if car_number == self.WINNER_DNR:
             # Both failed to run.
-            print(f"Adding DNR as a result for race {self.name()}")
             add_dnr()
 
         elif (

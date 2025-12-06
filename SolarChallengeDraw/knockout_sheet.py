@@ -49,6 +49,7 @@ from knockout_sheet_elements import (
     NumberBoxFactory,
     RaceDrawing,
     COLUMN_WIDTH,
+    ShowFromArrow,
 )
 
 
@@ -278,6 +279,9 @@ class KnockoutSheet:
             y_spacing: float,
             round: List[Race],
             columns_wide: int,
+            show_from_arrow: Tuple[ShowFromArrow, ShowFromArrow] | Tuple[ShowFromArrow],
+            show_winner_label: bool,
+            show_loser_label: bool,
             show_result_box: bool,
         ) -> float:
             """Draws a round in either the winners' or losers' brackets.
@@ -288,6 +292,9 @@ class KnockoutSheet:
                 y_spacing (float): The y spacing between branches in the round.
                 round (List[Race]): The round itself.
                 columns_wide (int): The number of columns wide to draw the round to make it line up correctly.
+                show_from_arrow (Tuple[bool, bool] | Tuple[bool]): Whether arrows from the previous race are needed (Left, Right).
+                show_winner_label (bool): Whether an arrow to the winner's next race is needed. An arrow will always be shown if this is a podium.
+                show_loser_label (bool): Whether an arrow to the loser's next race is needed. An arrow will always be shown if this is a podium.
                 show_result_box (bool): When True, draws the result of the race
                     next to it (only enable for the grand final and auxilliary races).
 
@@ -301,7 +308,17 @@ class KnockoutSheet:
                 race_drawing = RaceDrawing(self, event, numbers, show_seed)
                 self._races.append(race_drawing)
                 x_end = race_drawing.draw_race(
-                    x, race_y_centre, y_spacing / 2, columns_wide, race, show_result_box
+                    x=x,
+                    y_centre=race_y_centre,
+                    y_spacing=y_spacing / 2,
+                    columns_wide=columns_wide,
+                    race=race,
+                    show_result_box=show_result_box,
+                    show_from_arrow=show_from_arrow,
+                    show_winner_label=show_winner_label
+                    or isinstance(race.winner_next_race, Podium),
+                    show_loser_label=show_loser_label
+                    or isinstance(race.loser_next_race, Podium),
                 )
 
             return x_end
@@ -326,6 +343,9 @@ class KnockoutSheet:
                     round=round,
                     columns_wide=cols_wide,
                     show_result_box=False,
+                    show_from_arrow=(ShowFromArrow.HIDE, ShowFromArrow.HIDE),
+                    show_winner_label=False,
+                    show_loser_label=True,
                 )
                 draw_round_box(
                     x_end=next_x,
@@ -361,7 +381,6 @@ class KnockoutSheet:
                 Tuple[float, float]: The x coordinate at the end of the bracket and the centreline of the right hand side.
             """
 
-            # TODO: Handle byes in the losers' round.
             def y_spacing(index: int) -> float:
                 """Calculates the required spacing for a round."""
                 return y_spacing_initial * (2 ** (index // 2))
@@ -376,6 +395,18 @@ class KnockoutSheet:
                 else:
                     return y_spacing(index - 1) / 4 + y_offset(index - 2)
 
+            def show_from_arrows_needed(index: int) -> Tuple[ShowFromArrow, ShowFromArrow]:
+                if index == 0:
+                    # Show arrows for everything as this is the first losers' round.
+                    return (ShowFromArrow.TO_EAST, ShowFromArrow.TO_EAST)
+                elif index % 2 == 0:
+                    # This is a reduction only, so no arrows.
+                    return (ShowFromArrow.HIDE, ShowFromArrow.HIDE)
+                else:
+                    # This is a round where cars from the primary round come in.
+                    # Arrows for them, but not the cars already in the bracket.
+                    return (ShowFromArrow.TO_EAST, ShowFromArrow.HIDE)
+
             next_x = x
             for i, round in enumerate(rounds):
                 next_x = draw_round(
@@ -385,6 +416,9 @@ class KnockoutSheet:
                     round=round,
                     columns_wide=1,
                     show_result_box=False,
+                    show_from_arrow=show_from_arrows_needed(i),
+                    show_winner_label=False,
+                    show_loser_label=False,
                 )
                 draw_round_box(
                     next_x,
@@ -424,6 +458,9 @@ class KnockoutSheet:
                 round=[event.grand_final],
                 columns_wide=1,
                 show_result_box=True,
+                show_from_arrow=(ShowFromArrow.HIDE, ShowFromArrow.HIDE),
+                show_winner_label=True,
+                show_loser_label=True,
             )
             draw_round_box(
                 x_end=right_side - LABEL_WIDTH,
@@ -544,8 +581,27 @@ class KnockoutSheet:
         save_ps: bool = False,
         generate_pdf: bool = True,
         surpress_output: bool = False,
-    ) -> None:
-        """Exports the canvas as postscript to a file."""
+    ) -> str:
+        """Exports the canvas as postscript to a file.
+
+        Args:
+            ghostscript_path (str): The path the the Ghostscript interpreter
+                used to convert postscript into a PDF page.
+            output (str): The name of the file to create. An appropriate file
+                extension will be added. If it already ends with ".pdf" or
+                ".ps", this will be removed.
+            pdf_width_mm (float): The width of the page in mm used for scaling.
+            pdf_height_mm (float): The height of the page in mm used for scaling.
+            save_ps (bool, optional): Whether to create a file with the saved
+                postscript. Defaults to False.
+            generate_pdf (bool, optional): Whether to create a PDF file with the
+                converted postscript. Defaults to True.
+            surpress_output (bool, optional): Whether to surpress output from
+                Ghostscript. Defaults to False.
+
+        Returns:
+            str: The created postscript.
+        """
         # Remove the extension if it is one we recognise.
         if output.lower().endswith(".pdf"):
             output = output[:-4]
@@ -556,22 +612,19 @@ class KnockoutSheet:
         postscript_file = output + ".ps"
         pdf_file = output + ".pdf"
         self.canvas.update()
-        postscript = cast(
-            str,
-            self.canvas.postscript(
-                x=0,
-                y=0,
-                width=self._width,
-                height=self._height,
-                pagewidth=297,
-                pageheight=210,
-                pageanchor=ttkc.NE,
-            ),
-        ).encode()
+        postscript: str = self.canvas.postscript(
+            x=0,
+            y=0,
+            width=self._width,
+            height=self._height,
+            pagewidth=297,
+            pageheight=210,
+            pageanchor=ttkc.NE,
+        )
 
         if save_ps:
             # We need to save the postscript file.
-            with open(postscript_file, "wb") as file:
+            with open(postscript_file, "w") as file:
                 file.write(postscript)
 
         if generate_pdf:
@@ -594,11 +647,13 @@ class KnockoutSheet:
             ]
             if not surpress_output:
                 print(" ".join(args))
-                
+
             process = subprocess.Popen(
                 args,
                 stdin=subprocess.PIPE,
                 stdout=subprocess.DEVNULL if surpress_output else None,
             )
-            process.communicate(postscript, timeout=30)
+            process.communicate(postscript.encode(), timeout=30)
             process.wait()
+
+        return postscript

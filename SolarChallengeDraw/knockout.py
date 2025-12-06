@@ -35,8 +35,7 @@ def add_round(next_round: List[Race]) -> List[Race]:
                 seed=seed_pair(high_seed),
                 branch_type=BranchType.DEPENDENT_EDITABLE,
             ),
-            winner_next_race=next_round_race,
-            loser_show_label=True,
+            winner_next_race=next_round_race
         )
         races.append(left_race)
         next_round_race.left_branch.prev_race = left_race
@@ -52,8 +51,7 @@ def add_round(next_round: List[Race]) -> List[Race]:
                 seed=seed_pair(low_seed),
                 branch_type=BranchType.DEPENDENT_EDITABLE,
             ),
-            winner_next_race=next_round_race,
-            loser_show_label=True,
+            winner_next_race=next_round_race
         )
         races.append(right_race)
         next_round_race.right_branch.prev_race = right_race
@@ -69,8 +67,7 @@ def create_empty_draw(competitors: int) -> List[List[Race]]:
         right_branch=RaceBranch(
             seed=2,
             branch_type=BranchType.DEPENDENT_EDITABLE,
-        ),
-        loser_show_label=True,
+        )
     )
 
     event: List[List[Race]] = [[single_elim_final]]
@@ -238,9 +235,7 @@ def add_grand_final(
             prev_race=losers_final,
         ),
         winner_next_race=Podium(1),
-        loser_next_race=Podium(2),
-        winner_show_label=True,
-        loser_show_label=True,
+        loser_next_race=Podium(2)
     )
     cast(Podium, grand_final.winner_next_race).branch.prev_race = grand_final
     cast(Podium, grand_final.loser_next_race).branch.prev_race = grand_final
@@ -262,7 +257,6 @@ def add_grand_final(
 
     def assign_podium_to_loser(race: Race, position: int):
         race.loser_next_race = Podium(position)
-        race.loser_show_label = True
         cast(Podium, race.loser_next_race).branch.prev_race = race
 
     assign_podium_to_loser(losers_final, 3)

@@ -4,9 +4,9 @@ Written by Jotham Gates, 29/11/2025"""
 
 from __future__ import annotations
 from abc import ABC, abstractmethod
-from enum import StrEnum
+from enum import Enum, StrEnum, auto
 import tkinter as tk
-from typing import Iterable, List, Literal, Tuple, TYPE_CHECKING, cast
+from typing import Iterable, List, Literal, Tuple, TYPE_CHECKING, Type, cast
 import numpy as np
 import ttkbootstrap as ttk
 import ttkbootstrap.constants as ttkc
@@ -48,9 +48,9 @@ ARROW_HEIGHT = 15
 ARROW_WIDTH = 20
 BRACKET_VERTICAL_SEPARATION = 50
 BRACKET_LINE_THICKNESS = 2
-FIRST_COLUMN_HINT_WIDTH = LABEL_WIDTH
+FIRST_COLUMN_HINT_WIDTH = LABEL_WIDTH + 50
 COLUMN_WIDTH = LABEL_WIDTH + 2 * TEXT_MARGIN + 2 * HORIZONTAL_LINE_LENGTH
-AUX_RACES_SECTION_WIDTH = COLUMN_WIDTH + LABEL_WIDTH + 2 * TEXT_MARGIN
+AUX_RACES_SECTION_WIDTH = COLUMN_WIDTH + LABEL_WIDTH + 2 * TEXT_MARGIN + ARROW_WIDTH
 
 
 class NumberBox(ABC):
@@ -63,7 +63,7 @@ class NumberBox(ABC):
         race_branch: RaceBranch | None,
         aux_race_manager: AuxilliaryRaceManager,
         sheet: KnockoutSheet,
-        override_type_editable: bool
+        override_type_editable: bool,
     ) -> None:
         """Initialises the number box.
 
@@ -187,7 +187,9 @@ class InteractiveNumberBox(NumberBox):
                 BranchType.DEPENDENT_NOT_EDITABLE as
                 BranchType.DEPENDENT_EDITABLE. Defaults to False.
         """
-        super().__init__(x, y, race_branch, aux_race_manager, sheet, override_type_editable)
+        super().__init__(
+            x, y, race_branch, aux_race_manager, sheet, override_type_editable
+        )
         self._in_update = False  # Signals if a change to the combobox should be ignored (somewhat like a semaphore).
 
     def _combobox_state(self) -> str:
@@ -371,7 +373,9 @@ class NumberBoxFactory(ABC):
                 x, y, race_branch, aux_race_manager, sheet, override_type_editable
             )
         else:
-            return InitialNumberBox(x, y, race_branch, aux_race_manager, sheet, override_type_editable)
+            return InitialNumberBox(
+                x, y, race_branch, aux_race_manager, sheet, override_type_editable
+            )
 
 
 class InteractiveNumberBoxFactory(NumberBoxFactory):
@@ -404,7 +408,9 @@ class PrintNumberBoxFactory(NumberBoxFactory):
         sheet: KnockoutSheet,
         override_type_editable: bool = False,
     ) -> NumberBox:
-        return PrintNumberBox(x, y, race_branch, aux_race_manager, sheet, override_type_editable)
+        return PrintNumberBox(
+            x, y, race_branch, aux_race_manager, sheet, override_type_editable
+        )
 
 
 def fill_probability_style(
@@ -655,6 +661,261 @@ class NotesBox:
                 self.process_markdown_line(line)
 
 
+class HintArrow(ABC):
+    """Class that draws a hint arrow."""
+
+    def __init__(
+        self,
+        sheet: KnockoutSheet,
+        text_handle: int,
+        direction: Literal["to"] | Literal["from"],
+    ) -> None:
+        self._sheet = sheet
+        self._text_handle = text_handle
+        self._direction = direction
+
+    def _text(
+        self,
+        result: BranchResult,
+        race_name: str,
+        dnr_expected: bool,
+        present_tense: bool,
+        car_number: int | None,
+    ) -> str:
+        # Who does this hint pertain to
+        qualifier_str: str
+        if not dnr_expected:
+            # Normal
+            match result:
+                case BranchResult.WINNER:
+                    qualifier_str = "Winner"
+                case BranchResult.LOSER:
+                    qualifier_str = "Loser"
+                case _:
+                    raise ValueError("The result needs to be a winner or a loser.")
+        else:
+            # DNR.
+            if car_number is None:
+                # Not provided, assume there are multiple competitors who DNR'd.
+                qualifier_str = "Both"
+            else:
+                # A single car number was provided.
+                qualifier_str = f"{car_number}"
+
+        dnr_str = ""
+        if dnr_expected:
+            dnr_str = f" {'because' if present_tense else 'if'} DNR"
+
+        return f"{qualifier_str} {self._direction} {race_name}{dnr_str}"
+
+    @abstractmethod
+    def update(self) -> None:
+        pass
+
+    def _dnr_likely_number(self, race:Race) -> Tuple[bool, int|None]:
+        """Works out if a DNR is likely for the arrow and if so, should a car number be shown.
+
+        Args:
+            race (Race): The race to look at.
+
+        Returns:
+            Tuple[bool, int|None]: If a DNR is likely and whether the number should be shown.
+        """
+        # Is a DNR for this arrow likely and will it be one or both cars?
+        dnr_likely = (
+            race.get_expected_competitors(FillProbability.LIKELY) < 2
+        )
+        car_number: int | None = None
+        options = race.get_options()
+        if len(options) == 1:
+            car_number = options[0].car_id
+        
+        return dnr_likely, car_number
+
+class HintToArrow(HintArrow):
+    """Class for a hint to arrow."""
+
+    def __init__(
+        self,
+        sheet: KnockoutSheet,
+        current_race: Race | Podium,
+        x: float,
+        y: float,
+        result: BranchResult,
+        flip: Literal[-1] | Literal[1] = 1,
+    ) -> None:
+        """Draws an arrow to show where to proceed from a race."""
+        points = [
+            x,
+            y,
+            x + ARROW_WIDTH / 3,
+            y + ARROW_HEIGHT * flip,
+            x + 2 * ARROW_WIDTH / 3,
+            y + ARROW_HEIGHT * flip,
+            x + ARROW_WIDTH,
+            y + ARROW_HEIGHT * flip,
+        ]
+        sheet.canvas.create_line(points, arrow="last", smooth=True)
+        text_handle = sheet.canvas.create_text(
+            x + ARROW_WIDTH + SHORT_TEXT_MARGIN,
+            y + ARROW_HEIGHT * flip,
+            anchor=ttkc.W,
+            font=(FONT, FONT_SMALL_SIZE),
+        )
+        super().__init__(sheet, text_handle, "to")
+        self._result = result
+        self._current_race = current_race
+        self.update()
+
+    def update(self) -> None:
+        race_name: str | None = None
+        assert isinstance(
+            self._current_race, Race
+        ), "The current race on the to arrow must be a Race, not a podium."
+
+        match self._result:
+            case BranchResult.WINNER:
+                if self._current_race.winner_next_race is not None:
+                    race_name = self._current_race.winner_next_race.name()
+            case BranchResult.LOSER:
+                if self._current_race.loser_next_race is not None:
+                    race_name = self._current_race.loser_next_race.name()
+
+            case _:
+                raise LookupError("Only winning and loosing is allowed here.")
+
+        if race_name is not None:
+            # This arrow has something to point to.
+            dnr_likely, car_number =self._dnr_likely_number(self._current_race)
+            self._sheet.canvas.itemconfigure(
+                self._text_handle,
+                text=self._text(
+                    result=self._result,
+                    race_name=race_name,
+                    dnr_expected=dnr_likely,
+                    present_tense=self._current_race is None
+                    or self._current_race.is_result_decided(),
+                    car_number=car_number,
+                ),
+            )
+        else:
+            # This arrow has nowhere to point to.
+            self._sheet.canvas.itemconfigure(
+                self._text_handle, text="Race currently unused"
+            )
+
+
+class HintFromArrow(HintArrow):
+    def __init__(
+        self,
+        sheet: KnockoutSheet,
+        race_branch: RaceBranch | None,
+        x: float,
+        y: float,
+    ) -> None:
+        """Draws and arrow to show which race a competitor is coming from.
+
+        Args:
+            sheet (KnockoutSheet): The sheet to draw on.
+            race_branch (RaceBranch | None): The branch to use.
+            x (float): The x coordinate for the RIGHT side of the label.
+            y (float): The y centre coordinate.
+        """
+        text_handle = self._draw(sheet, x, y)
+        self._race_branch = race_branch
+        super().__init__(sheet, text_handle, "from")
+        self.update()
+
+    def _draw(self, sheet: KnockoutSheet, x: float, y: float) -> int:
+        """Draws the arrow. This is placed into its own method so that different styles may be used.
+
+        Args:
+            sheet (KnockoutSheet): The sheet to draw on (self._sheet is not defined yet).
+
+        Returns:
+            int: The handle of the text.
+        """
+        points = [x - ARROW_WIDTH - SHORT_TEXT_MARGIN, y, x - SHORT_TEXT_MARGIN, y]
+        sheet.canvas.create_line(points, arrow="last", smooth=True)
+
+        return sheet.canvas.create_text(
+            x - ARROW_WIDTH - 2 * SHORT_TEXT_MARGIN,
+            y,
+            anchor=ttkc.E,
+            font=(FONT, FONT_SMALL_SIZE),
+        )
+
+    def set_branch(self, branch: RaceBranch | None) -> None:
+        """Sets the race branch if it has changed. This is most likely to occur for auxilliary races.
+
+        Args:
+            branch (RaceBranch): The race branch to update.
+        """
+        self._race_branch = branch
+
+    def update(self) -> None:
+        if self._race_branch is not None and self._race_branch.prev_race is not None:
+            # We have a branch provided and it has a previous race. Act as normal.
+            dnr_expected = self._race_branch.fill_probability(False)
+            car_number : None | int = None
+            if dnr_expected:
+                options = self._race_branch.prev_race.get_options()
+                if len(options) == 1:
+                    car_number = options[0].car_id
+
+            self._sheet.canvas.itemconfigure(
+                self._text_handle,
+                text=self._text(
+                    result=self._race_branch.branch_result(),
+                    race_name=self._race_branch.prev_race.name(),
+                    dnr_expected=dnr_expected
+                    == FillProbability.UNLIKELY,
+                    present_tense=self._race_branch.prev_race.is_result_decided(),
+                    car_number=car_number
+                ),
+            )
+        else:
+            # Not enough information provided. Put a blank message in.
+            self._sheet.canvas.itemconfigure(self._text_handle, text="Currently empty")
+
+
+class HintFromAboveArrow(HintFromArrow):
+    """Class that draws a hint from arrow and placed the arrow above the
+    prospective number box instead of the East."""
+
+    def _draw(self, sheet: KnockoutSheet, x: float, y: float) -> int:
+        arrow_x = x - SHORT_TEXT_MARGIN
+        arrow_y = y
+        text_x = arrow_x - 2 * ARROW_WIDTH / 3 + TEXT_MARGIN
+        text_y = y - ARROW_HEIGHT - TEXT_MARGIN
+        points = [
+            text_x - SHORT_TEXT_MARGIN,
+            text_y,
+            arrow_x - 2 * ARROW_WIDTH / 3,
+            text_y,
+            arrow_x - ARROW_WIDTH,
+            0.5 * (text_y + arrow_y),
+            arrow_x - 2 * ARROW_WIDTH / 3,
+            arrow_y,
+            arrow_x,
+            arrow_y,
+        ]
+        sheet.canvas.create_line(points, arrow="last", smooth=True)
+
+        return sheet.canvas.create_text(
+            text_x,
+            text_y,
+            anchor=ttkc.W,
+            font=(FONT, FONT_SMALL_SIZE),
+        )
+
+
+class ShowFromArrow(Enum):
+    HIDE = auto()
+    TO_EAST = auto()
+    TO_NORTH = auto()
+
+
 class RaceDrawing:
     """Class that draws a race."""
 
@@ -677,19 +938,22 @@ class RaceDrawing:
         self._event = event
         self._numbers_factory = numbers_factory
         self._show_seed = show_seed
-        self._number_boxes: Tuple[NumberBox, NumberBox] | Tuple[NumberBox]
+        self._number_boxes: Tuple[Tuple[NumberBox, HintFromArrow | None], ...]
         self._lineset: BracketLineSet
-        self._results_box: NumberBox | None = (
+        self._results_box: Tuple[NumberBox, HintFromArrow | None] | None = (
             None  # Only used if requested to show the results.
         )
+        self._winner_to: HintToArrow | None = None
+        self._loser_to: HintToArrow | None = None
 
     def draw_number(
         self,
         x: float,
         y: float,
         race_branch: RaceBranch | None,
+        show_from_arrow: ShowFromArrow,
         override_type_editable: bool = False,
-    ) -> NumberBox:
+    ) -> Tuple[NumberBox, HintFromArrow | None]:
         """Draws a numbers box at the specified position.
 
         Args:
@@ -703,6 +967,7 @@ class RaceDrawing:
         Returns:
             NumberBox: The created number box.
         """
+        # Draw the box for the number.
         number_box = self._numbers_factory.create(
             x=x,
             y=y,
@@ -711,6 +976,18 @@ class RaceDrawing:
             sheet=self._sheet,
             override_type_editable=override_type_editable,
         )
+
+        # Draw the from hint.
+        from_arrow: HintFromArrow | None = None
+        match show_from_arrow:
+            case ShowFromArrow.TO_EAST:
+                from_arrow = HintFromArrow(self._sheet, race_branch, x, y)
+            case ShowFromArrow.TO_NORTH:
+                from_arrow = HintFromAboveArrow(self._sheet, race_branch, x, y)
+            case ShowFromArrow.HIDE:
+                pass
+            case _:
+                raise NotImplementedError("The requested direction is not set.")
 
         if race_branch is not None:
             # Draw the seed.
@@ -723,108 +1000,7 @@ class RaceDrawing:
                     fill="red",
                 )
 
-            # Arrow hinting where the competitor came from.
-            show_label = False
-            text = ""
-            match race_branch.branch_result():
-                case BranchResult.WINNER:
-                    if (
-                        race_branch.prev_race is not None
-                        and race_branch.prev_race.winner_show_label
-                        and not isinstance(
-                            race_branch.prev_race.winner_next_race, Podium
-                        )
-                    ):
-                        # Show the winner's label.
-                        show_label = True
-                        text = "Winner"
-
-                case BranchResult.LOSER:
-                    if (
-                        race_branch.prev_race is not None
-                        and race_branch.prev_race.loser_show_label
-                        and not isinstance(
-                            race_branch.prev_race.loser_next_race, Podium
-                        )
-                    ):
-                        # Show the winner's label.
-                        show_label = True
-                        text = "Loser"
-
-            if show_label:
-                self.draw_hint_from_arrow(
-                    x - SHORT_TEXT_MARGIN, y, cast(Race, race_branch.prev_race), text
-                )
-
-        return number_box
-
-    def draw_hint_to_arrow(
-        self,
-        x: float,
-        y: float,
-        to_race: Race | Podium,
-        result_name: str,
-        if_dnr: bool = False,
-        flip: Literal[-1] | Literal[1] = 1,
-    ) -> None:
-        """Draws an arrow to show where to proceed from a race."""
-        points = [
-            x,
-            y,
-            x + ARROW_WIDTH / 3,
-            y + ARROW_HEIGHT * flip,
-            x + 2 * ARROW_WIDTH / 3,
-            y + ARROW_HEIGHT * flip,
-            x + ARROW_WIDTH,
-            y + ARROW_HEIGHT * flip,
-        ]
-        self._sheet.canvas.create_line(points, arrow="last", smooth=True)
-        if_dnr_text = ""
-        if if_dnr:
-            if_dnr_text = " if DNR"
-
-        self._sheet.canvas.create_text(
-            x + ARROW_WIDTH + SHORT_TEXT_MARGIN,
-            y + ARROW_HEIGHT * flip,
-            text=f"{result_name} to {to_race.name()}{if_dnr_text}",
-            anchor=ttkc.W,
-            font=(FONT, FONT_SMALL_SIZE),
-        )
-
-    def draw_hint_from_arrow(
-        self,
-        x: float,
-        y: float,
-        from_race: Race | Podium,
-        result_name: str,
-        if_dnr: bool = False,
-    ) -> None:
-        """Draws and arrow to show which race a competitor is coming from.
-        This complements draw_hint_to_arrow().
-
-        Args:
-            x (float): The x coordinate for the RIGHT side of the label.
-            y (float): The y centre coordinate.
-            from_race (Race | Podium): The race the arrow is coming from.
-            result_name (str): "Winner" or "Loser"
-            if_dnr (bool, optional): Adds an "if DNR" qualifier. Defaults to False.
-        """
-        points = [x - ARROW_WIDTH, y, x, y]
-        self._sheet.canvas.create_line(points, arrow="last", smooth=True)
-
-        if_dnr_text = ""
-        if if_dnr:
-            if_dnr_text = " if DNR"
-
-        text_left_x, _, _, _ = self._sheet.canvas.bbox(
-            self._sheet.canvas.create_text(
-                x - ARROW_WIDTH - SHORT_TEXT_MARGIN,
-                y,
-                text=f"{result_name} from {from_race.name()}{if_dnr_text}",
-                anchor=ttkc.E,
-                font=(FONT, FONT_SMALL_SIZE),
-            )
-        )
+        return number_box, from_arrow
 
     def draw_race(
         self,
@@ -834,6 +1010,9 @@ class RaceDrawing:
         columns_wide: int,
         race: Race,
         show_result_box: bool,
+        show_from_arrow: Tuple[ShowFromArrow, ShowFromArrow] | Tuple[ShowFromArrow],
+        show_winner_label: bool,
+        show_loser_label: bool,
     ) -> float:
         """Draws a race.
 
@@ -845,6 +1024,7 @@ class RaceDrawing:
             race (Race): The race to draw.
             show_result_box (bool): When True, draws the result of the race
                 next to it (only enable for the grand final and auxilliary races).
+            show_from_arrow (Tuple[bool, bool]): Whether to show an arrow from the previous races.
 
         Returns:
             float: The x coordinate of the right side of the race.
@@ -871,9 +1051,12 @@ class RaceDrawing:
             top_y = y_centre - y_spacing / 2
             bottom_y = y_centre + y_spacing / 2
             assert not race.is_bye(), f"Use {draw_bye.__name__}() for a bye."
+            assert (
+                len(show_from_arrow) == 2
+            ), "The show_from_arrow tuple should be of length 2."
             self._number_boxes = (
-                self.draw_number(x, top_y, race.left_branch),
-                self.draw_number(x, bottom_y, race.right_branch),
+                self.draw_number(x, top_y, race.left_branch, show_from_arrow[0]),
+                self.draw_number(x, bottom_y, race.right_branch, show_from_arrow[1]),
             )
             self._lineset = BracketLineSetNormal(
                 self._sheet.canvas,
@@ -887,11 +1070,12 @@ class RaceDrawing:
 
         def draw_bye() -> None:
             assert race.is_bye(), f"Use {draw_normal_race.__name__}() for non-byes."
+            assert (
+                len(show_from_arrow) >= 1
+            ), "The show_from_arrow tuple should be at least of length 1. Only the first element is used."
             self._number_boxes = (
                 self.draw_number(
-                    x,
-                    y_centre,
-                    race.theoretical_winner(),
+                    x, y_centre, race.theoretical_winner(), show_from_arrow[0]
                 ),
             )
             self._lineset = BracketLineSetBye(
@@ -910,29 +1094,19 @@ class RaceDrawing:
 
         # Arrows going from the race.
         arrow_x = bracket_x_end - HORIZONTAL_LINE_LENGTH + TEXT_MARGIN
-        if race.loser_show_label:
-            assert (
-                race.loser_next_race is not None
-            ), "Show label is True for losers, but no losers to show."
-            self.draw_hint_to_arrow(
-                arrow_x,
-                y_centre + TEXT_MARGIN,
-                race.loser_next_race,
-                "Loser",
-                race.is_bye(),
+        if show_loser_label:
+            self._loser_to = HintToArrow(
+                self._sheet, race, arrow_x, y_centre + TEXT_MARGIN, BranchResult.LOSER
             )
 
-        if race.winner_show_label:
-            assert (
-                race.winner_next_race is not None
-            ), "Show label is True for winners, but no winners to show."
-            self.draw_hint_to_arrow(
+        if show_winner_label:
+            self._winner_to = HintToArrow(
+                self._sheet,
+                race,
                 arrow_x,
                 y_centre - TEXT_MARGIN,
-                race.winner_next_race,
-                "Winner",
-                race.is_bye(),
-                flip=-1,
+                BranchResult.WINNER,
+                -1,
             )
 
         right_side = bracket_x_end + TEXT_MARGIN
@@ -947,6 +1121,7 @@ class RaceDrawing:
                     if race.winner_next_race is not None
                     else None
                 ),
+                show_from_arrow=ShowFromArrow.HIDE,
                 override_type_editable=True,
             )
             right_side += LABEL_WIDTH
@@ -962,8 +1137,10 @@ class RaceDrawing:
         assert len(new_branches) == len(
             self._number_boxes
         ), "Currently the number of branches when updating must be the same."
-        for i, branch in enumerate(new_branches):
-            self._number_boxes[i].set_race_branch(branch)
+        for (number_box, arrow), branch in zip(self._number_boxes, new_branches):
+            number_box.set_race_branch(branch)
+            if arrow is not None:
+                arrow.set_branch(branch)
 
         self._lineset.update_branches(new_branches)
 
@@ -976,15 +1153,29 @@ class RaceDrawing:
                 # We can't provide an actual branch.
                 branch = None
 
-            self._results_box.set_race_branch(branch)
+            number_box, arrow = self._results_box
+            number_box.set_race_branch(branch)
+            if arrow is not None:
+                arrow.set_branch(branch)
 
     def update(self) -> None:
         """Updates the elements in the drawing of the race."""
-        for number_box in self._number_boxes:
+        for number_box, arrow in self._number_boxes:
             number_box.update()
-        
+            if arrow is not None:
+                arrow.update()
+
         if self._results_box is not None:
-            self._results_box.update()
+            number_box, arrow = self._results_box
+            number_box.update()
+            if arrow is not None:
+                arrow.update()
+
+        if self._winner_to is not None:
+            self._winner_to.update()
+
+        if self._loser_to is not None:
+            self._loser_to.update()
 
         self._lineset.update()
 
@@ -1028,16 +1219,19 @@ class AuxilliaryRaceSheet:
                 show_seed=False,
             )
             self._races.append(drawing)
-            y_centre = self._box.y_pos + BRACKET_VERTICAL_SEPARATION
+            y_centre = self._box.y_pos + BRACKET_VERTICAL_SEPARATION + TEXT_MARGIN
             drawing.draw_race(
-                x=top_left[0] + TEXT_MARGIN,
+                x=top_left[0] + TEXT_MARGIN + ARROW_WIDTH,
                 y_centre=y_centre,
                 y_spacing=BRACKET_VERTICAL_SEPARATION,
                 columns_wide=1,
                 race=race,
+                show_from_arrow=(ShowFromArrow.TO_NORTH, ShowFromArrow.TO_NORTH),
+                show_winner_label=True,
+                show_loser_label=False,
                 show_result_box=True,
             )
-            self._box.y_pos += 2 * BRACKET_VERTICAL_SEPARATION
+            self._box.y_pos += 2 * BRACKET_VERTICAL_SEPARATION + TEXT_MARGIN
 
         self._event = event
 

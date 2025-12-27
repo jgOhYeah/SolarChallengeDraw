@@ -16,6 +16,7 @@ if TYPE_CHECKING:
     # https://stackoverflow.com/a/39757388
     from knockout_sheet import KnockoutSheet
 
+from car import Car
 from knockout import AuxilliaryRaceManager, KnockoutEvent
 from knockout_race import (
     BranchResult,
@@ -674,63 +675,21 @@ class HintArrow(ABC):
         self._text_handle = text_handle
         self._direction = direction
 
-    def _text(
-        self,
-        result: BranchResult,
-        race_name: str,
-        dnr_expected: bool,
-        present_tense: bool,
-        car_number: int | None,
-    ) -> str:
-        # Who does this hint pertain to
-        qualifier_str: str
-        if not dnr_expected:
-            # Normal
-            match result:
-                case BranchResult.WINNER:
-                    qualifier_str = "Winner"
-                case BranchResult.LOSER:
-                    qualifier_str = "Loser"
-                case _:
-                    raise ValueError("The result needs to be a winner or a loser.")
-        else:
-            # DNR.
-            if car_number is None:
-                # Not provided, assume there are multiple competitors who DNR'd.
-                qualifier_str = "Both"
-            else:
-                # A single car number was provided.
-                qualifier_str = f"{car_number}"
-
-        dnr_str = ""
-        if dnr_expected:
-            dnr_str = f" {'because' if present_tense else 'if'} DNR"
-
-        return f"{qualifier_str} {self._direction} {race_name}{dnr_str}"
-
     @abstractmethod
     def update(self) -> None:
         pass
 
-    def _dnr_likely_number(self, race:Race) -> Tuple[bool, int|None]:
-        """Works out if a DNR is likely for the arrow and if so, should a car number be shown.
+    @classmethod
+    def _result_to_str(cls, result: BranchResult) -> str:
+        match result:
+            case BranchResult.WINNER:
+                return "Winner"
+            case BranchResult.LOSER:
+                return "Loser"
+            case _:
+                # Unkown, generic competitor.
+                return "Competitor"
 
-        Args:
-            race (Race): The race to look at.
-
-        Returns:
-            Tuple[bool, int|None]: If a DNR is likely and whether the number should be shown.
-        """
-        # Is a DNR for this arrow likely and will it be one or both cars?
-        dnr_likely = (
-            race.get_expected_competitors(FillProbability.LIKELY) < 2
-        )
-        car_number: int | None = None
-        options = race.get_options()
-        if len(options) == 1:
-            car_number = options[0].car_id
-        
-        return dnr_likely, car_number
 
 class HintToArrow(HintArrow):
     """Class for a hint to arrow."""
@@ -768,40 +727,92 @@ class HintToArrow(HintArrow):
         self.update()
 
     def update(self) -> None:
-        race_name: str | None = None
+        def get_next_race() -> Race | Podium | None:
+            assert isinstance(
+                self._current_race, Race
+            ), "The current race on the to arrow must be a Race, not a podium."
+            match self._result:
+                case BranchResult.WINNER:
+                    return self._current_race.winner_next_race
+                case BranchResult.LOSER:
+                    return self._current_race.loser_next_race
+                case _:
+                    raise LookupError("Only winning and loosing is allowed here.")
+
         assert isinstance(
             self._current_race, Race
         ), "The current race on the to arrow must be a Race, not a podium."
 
-        match self._result:
-            case BranchResult.WINNER:
-                if self._current_race.winner_next_race is not None:
-                    race_name = self._current_race.winner_next_race.name()
-            case BranchResult.LOSER:
-                if self._current_race.loser_next_race is not None:
-                    race_name = self._current_race.loser_next_race.name()
-
-            case _:
-                raise LookupError("Only winning and loosing is allowed here.")
-
-        if race_name is not None:
+        next_race = get_next_race()
+        if next_race is not None:
             # This arrow has something to point to.
-            dnr_likely, car_number =self._dnr_likely_number(self._current_race)
+            next_branch = next_race.get_single_branch(self._current_race)
             self._sheet.canvas.itemconfigure(
                 self._text_handle,
                 text=self._text(
+                    fill_probability=next_branch.fill_probability(
+                        include_self_filled=False
+                    ),
+                    competitor=next_branch.car,
+                    filled=next_branch.filled,
                     result=self._result,
-                    race_name=race_name,
-                    dnr_expected=dnr_likely,
-                    present_tense=self._current_race is None
-                    or self._current_race.is_result_decided(),
-                    car_number=car_number,
+                    options=self._current_race.get_options(),
+                    all_options_present=self._current_race.branches_filled(),
+                    race_name=next_race.name(),
+                    aux_race=next_race.is_auxilliary_race,
                 ),
             )
         else:
             # This arrow has nowhere to point to.
             self._sheet.canvas.itemconfigure(
                 self._text_handle, text="Race currently unused"
+            )
+
+    def _text(
+        self,
+        fill_probability: FillProbability,
+        competitor: Car | None,
+        filled: bool,
+        result: BranchResult,
+        options: List[Car],
+        all_options_present: bool,
+        race_name: str,
+        aux_race: bool,
+    ) -> str:
+        # Filled / known results
+        if (
+            filled
+            and competitor is not None
+            and fill_probability == FillProbability.UNLIKELY
+        ):
+            return f"{competitor.car_id} to {race_name} due to DNR"
+        elif filled and competitor is not None and aux_race:
+            return f"Both to {race_name} due to DNR"
+        elif filled and competitor is not None and not aux_race:
+            return f"{competitor.car_id} to {race_name}"
+        elif filled and competitor is None:
+            return f"No one to {race_name}"
+
+        # Unfilled, based on options present.
+        elif all_options_present and len(options) == 0:
+            return f"No one to {race_name}"
+        elif (
+            all_options_present
+            and len(options) == 1
+            and fill_probability <= FillProbability.UNLIKELY
+        ):
+            return f"{options[0].car_id} to {race_name} if DNR"
+
+        # Generic, winner, loser
+        elif fill_probability == FillProbability.LIKELY:
+            result_text = self._result_to_str(result)
+            return f"{result_text} to {race_name}"
+        elif fill_probability == FillProbability.UNLIKELY:
+            result_text = self._result_to_str(result)
+            return f"{result_text} to {race_name} if DNR"
+        else:
+            raise ValueError(
+                "There is a condition in the from arrow that we haven't handled."
             )
 
 
@@ -856,27 +867,38 @@ class HintFromArrow(HintArrow):
     def update(self) -> None:
         if self._race_branch is not None and self._race_branch.prev_race is not None:
             # We have a branch provided and it has a previous race. Act as normal.
-            dnr_expected = self._race_branch.fill_probability(False)
-            car_number : None | int = None
-            if dnr_expected:
-                options = self._race_branch.prev_race.get_options()
-                if len(options) == 1:
-                    car_number = options[0].car_id
-
+            dnr_expected = (
+                self._race_branch.fill_probability(True) <= FillProbability.UNLIKELY
+            )
             self._sheet.canvas.itemconfigure(
                 self._text_handle,
                 text=self._text(
+                    decided=self._race_branch.prev_race.is_result_decided()
+                    or self._race_branch.fill_probability(True)
+                    == FillProbability.IMPOSSIBLE,
                     result=self._race_branch.branch_result(),
                     race_name=self._race_branch.prev_race.name(),
-                    dnr_expected=dnr_expected
-                    == FillProbability.UNLIKELY,
-                    present_tense=self._race_branch.prev_race.is_result_decided(),
-                    car_number=car_number
+                    dnr=dnr_expected,
                 ),
             )
         else:
             # Not enough information provided. Put a blank message in.
             self._sheet.canvas.itemconfigure(self._text_handle, text="Currently empty")
+
+    def _text(
+        self,
+        decided: bool,
+        result: BranchResult,
+        race_name: str,
+        dnr: bool,
+    ) -> str:
+        result_text = self._result_to_str(result)
+        if dnr and decided:
+            return f"Empty ({result_text} from {race_name})"
+        elif dnr and not decided:
+            return f"{result_text} from {race_name} if DNR"
+        else:
+            return f"{result_text} from {race_name}"
 
 
 class HintFromAboveArrow(HintFromArrow):

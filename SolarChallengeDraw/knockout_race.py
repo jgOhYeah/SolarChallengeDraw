@@ -209,9 +209,8 @@ class Winnable(ABC):
         pass
 
     def get_single_branch(self, filter_prev_race: Race) -> RaceBranch:
-        """Like get_branches, but forces a previous race and returns a single branch."""
+        """Like get_branches, but forces a previous race and returns a single branch. This will return the first branch if multiple branches have the same previous race."""
         branch = self.get_branches(filter_prev_race)
-        assert len(branch) == 1, "There should only be a single branch provided."
         return branch[0]
 
     @abstractmethod

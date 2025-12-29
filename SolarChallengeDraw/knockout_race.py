@@ -6,7 +6,7 @@ from __future__ import annotations
 from abc import ABC, abstractproperty
 from dataclasses import dataclass
 from enum import Enum, IntEnum, StrEnum, auto
-from typing import Iterable, List, Literal, Tuple, cast, TYPE_CHECKING
+from typing import Any, Dict, Iterable, List, Literal, Tuple, cast, TYPE_CHECKING
 import numpy as np
 from car import Car
 from abc import ABC, abstractmethod
@@ -176,6 +176,26 @@ class RaceBranch:
                 case BranchResult.NEITHER:
                     return car_assign_prob()
 
+    class Fields(StrEnum):
+        """Fields used to represent a race branch object when in dictionary form."""
+
+        SEED = "Seed"
+        TYPE = "Branch type"
+        PREV_RACE = "Previous race"
+        CAR = "Car"
+        FILLED = "Filled"
+
+    def to_dict(self) -> Dict[RaceBranch.Fields, Any]:
+        return {
+            self.Fields.SEED: self.seed,
+            self.Fields.TYPE: self.branch_type.name,
+            self.Fields.PREV_RACE: (
+                self.prev_race.name() if self.prev_race is not None else None
+            ),
+            self.Fields.CAR: self.car.car_id if self.car is not None else None,
+            self.Fields.FILLED: self.filled,
+        }
+
 
 class Winnable(ABC):
     @abstractmethod
@@ -291,6 +311,16 @@ class Winnable(ABC):
         """Checks if the current race / podium is an auxilliary race."""
         pass
 
+    class Fields(StrEnum):
+        """Fields used to represent a winnable object when in dictionary form."""
+
+        pass
+
+    @abstractmethod
+    def to_dict(self) -> Dict[Winnable.Fields, Any]:
+        """Generates a dictionary object that represents the winnable object."""
+        return {}
+
 
 class Podium(Winnable):
     """Class for a placing in the tournament."""
@@ -346,6 +376,18 @@ class Podium(Winnable):
     @property
     def is_auxilliary_race(self) -> bool:
         return False
+
+    class Fields(Winnable.Fields):
+        """Fields used to represent a winnable object when in dictionary form."""
+
+        POSITION = "Position"
+        BRANCH = "Branch"
+
+    def to_dict(self) -> Dict[Winnable.Fields, Any]:
+        return {
+            self.Fields.POSITION: self.position,
+            self.Fields.BRANCH: self.branch.to_dict(),
+        } | super().to_dict()
 
 
 class Race(Winnable):
@@ -583,3 +625,27 @@ class Race(Winnable):
     @property
     def is_auxilliary_race(self) -> bool:
         return self._is_auxilliary_race
+
+    class Fields(Winnable.Fields):
+        """Fields used to represent a winnable object when in dictionary form."""
+
+        LEFT_BRANCH = "Left branch"
+        RIGHT_BRANCH = "Right branch"
+        WINNER_NEXT_RACE = "Winner next race"
+        LOSER_NEXT_RACE = "Loser next race"
+        RACE_NUMBER = "Race number"
+
+    def to_dict(self) -> Dict[Winnable.Fields, Any]:
+        def name_or_none(race: Winnable | None) -> str | None:
+            if race is not None:
+                return race.name()
+            else:
+                return None
+
+        return {
+            self.Fields.RACE_NUMBER: self.race_number,
+            self.Fields.LEFT_BRANCH: self.left_branch.to_dict(),
+            self.Fields.RIGHT_BRANCH: self.right_branch.to_dict(),
+            self.Fields.WINNER_NEXT_RACE: name_or_none(self.winner_next_race),
+            self.Fields.LOSER_NEXT_RACE: name_or_none(self.loser_next_race),
+        } | super().to_dict()

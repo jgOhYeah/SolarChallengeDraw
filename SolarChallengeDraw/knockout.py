@@ -5,11 +5,18 @@ Written by Jotham Gates, 21/10/2025"""
 from __future__ import annotations
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Iterable, List, cast
+from typing import Any, Dict, Iterable, List, Tuple, cast
 import numpy as np
 
 from car import Car
-from knockout_race import FillProbability, Race, RaceBranch, BranchType, Podium
+from knockout_race import (
+    FillProbability,
+    Race,
+    RaceBranch,
+    BranchType,
+    Podium,
+    Winnable,
+)
 
 
 def add_round(next_round: List[Race]) -> List[Race]:
@@ -35,7 +42,7 @@ def add_round(next_round: List[Race]) -> List[Race]:
                 seed=seed_pair(high_seed),
                 branch_type=BranchType.DEPENDENT_EDITABLE,
             ),
-            winner_next_race=next_round_race
+            winner_next_race=next_round_race,
         )
         races.append(left_race)
         next_round_race.left_branch.prev_race = left_race
@@ -51,7 +58,7 @@ def add_round(next_round: List[Race]) -> List[Race]:
                 seed=seed_pair(low_seed),
                 branch_type=BranchType.DEPENDENT_EDITABLE,
             ),
-            winner_next_race=next_round_race
+            winner_next_race=next_round_race,
         )
         races.append(right_race)
         next_round_race.right_branch.prev_race = right_race
@@ -67,7 +74,7 @@ def create_empty_draw(competitors: int) -> List[List[Race]]:
         right_branch=RaceBranch(
             seed=2,
             branch_type=BranchType.DEPENDENT_EDITABLE,
-        )
+        ),
     )
 
     event: List[List[Race]] = [[single_elim_final]]
@@ -190,13 +197,15 @@ def create_loosers_draw(winners: List[List[Race]]) -> List[List[Race]]:
 
     return losers
 
+
 def randomise_cars(cars: List[Car]) -> List[Car]:
     """Randomises the cars."""
     rng = np.random.default_rng()
     order = rng.permutation(len(cars))
     return [cars[i] for i in order]
 
-def assign_cars(cars: List[Car], first_round: List[Race], reverse:bool=True) -> None:
+
+def assign_cars(cars: List[Car], first_round: List[Race], reverse: bool = True) -> None:
     """Assigns cars to the first round of the draw."""
     sorted_cars: List[Car | None] = sorted(
         cars, key=lambda c: cast(Car, c).points, reverse=True
@@ -218,11 +227,12 @@ def assign_cars(cars: List[Car], first_round: List[Race], reverse:bool=True) -> 
 
 def add_grand_final(
     winners_final: Race, losers_final: Race, losers_final_repecharge: Race
-) -> Race:
+) -> Tuple[Race, List[Podium]]:
     """Adds a grand final and sets the podium results from winning and loosing."""
     assert (
         winners_final.loser_next_race is losers_final
     ), "The loser of the winners' final should be a contestent in the losers' final."
+    podiums = [Podium(i) for i in range(1, 5)]
     grand_final = Race(
         left_branch=RaceBranch(
             seed=winners_final.theoretical_winner().seed,
@@ -234,8 +244,8 @@ def add_grand_final(
             branch_type=BranchType.DEPENDENT_EDITABLE,
             prev_race=losers_final,
         ),
-        winner_next_race=Podium(1),
-        loser_next_race=Podium(2)
+        winner_next_race=podiums[0],
+        loser_next_race=podiums[1],
     )
     cast(Podium, grand_final.winner_next_race).branch.prev_race = grand_final
     cast(Podium, grand_final.loser_next_race).branch.prev_race = grand_final
@@ -255,16 +265,16 @@ def add_grand_final(
         losers_final.loser_next_race is None
     ), "Loser should be removed and not have a next race."
 
-    def assign_podium_to_loser(race: Race, position: int):
-        race.loser_next_race = Podium(position)
-        cast(Podium, race.loser_next_race).branch.prev_race = race
+    def assign_podium_to_loser(race: Race, podium: Podium):
+        race.loser_next_race = podium
+        race.loser_next_race.branch.prev_race = race
 
-    assign_podium_to_loser(losers_final, 3)
-    assign_podium_to_loser(losers_final_repecharge, 4)
+    assign_podium_to_loser(losers_final, podiums[2])
+    assign_podium_to_loser(losers_final_repecharge, podiums[3])
 
     cast(Podium, losers_final.loser_next_race).branch.prev_race = losers_final
 
-    return grand_final
+    return grand_final, podiums
 
 
 def number_races_in_round(races: List[Race], start: int) -> int:
@@ -323,7 +333,7 @@ class AuxilliaryRaceManager:
                 left_branch=RaceBranch(-1, BranchType.DEPENDENT_NOT_EDITABLE),
                 right_branch=RaceBranch(-1, BranchType.DEPENDENT_NOT_EDITABLE),
                 is_auxilliary_race=True,
-                race_number=i
+                race_number=i,
             )
             for i in range(max_races)
         ]
@@ -438,6 +448,15 @@ class AuxilliaryRaceManager:
         self._remove(prev_race)
         # TODO: Reorganise / shuffle.
 
+    class Fields(StrEnum):
+        """Fields that represent the auxilliary race manager."""
+
+        RACES = "Races"
+
+    def to_dict(self) -> Dict[AuxilliaryRaceManager.Fields, Any]:
+        return {self.Fields.RACES: [r.to_dict() for r in self.races]}
+
+
 class KnockoutEvent:
     """A class that contains all races for the knockout event."""
 
@@ -452,7 +471,7 @@ class KnockoutEvent:
         assert (
             len(self.losers_bracket[-1]) == 1
         ), "Should only be one race in the last round."
-        self.grand_final = add_grand_final(
+        self.grand_final, self.podiums = add_grand_final(
             self.winners_bracket[-1][0],
             self.losers_bracket[-1][0],
             self.losers_bracket[-2][0],
@@ -541,3 +560,28 @@ class KnockoutEvent:
         print(repr(self.grand_final))
         print("Event order:")
         print(self.calculate_play_order())
+
+    class Fields(StrEnum):
+        """Fields that represent the knockout event."""
+
+        WINNERS_BRACKET = "Winners bracket"
+        LOSERS_BRACKET = "Losers bracket"
+        NAME = "Event name"
+        GRAND_FINAL = "Grand final"
+        AUX_RACES = "Aux races"
+        PODIUMS = "Podiums"
+
+    def to_dict(self) -> Dict[KnockoutEvent.Fields, Any]:
+        def bracket_to_dict(
+            bracket: List[List[Race]],
+        ) -> List[List[Dict[Winnable.Fields, Any]]]:
+            return [[race.to_dict() for race in round] for round in bracket]
+
+        return {
+            self.Fields.NAME: self.name,
+            self.Fields.WINNERS_BRACKET: bracket_to_dict(self.winners_bracket),
+            self.Fields.LOSERS_BRACKET: bracket_to_dict(self.losers_bracket),
+            self.Fields.GRAND_FINAL: self.grand_final.to_dict(),
+            self.Fields.AUX_RACES: self.auxilliary_races.to_dict(),
+            self.Fields.PODIUMS: [p.to_dict() for p in self.podiums],
+        }

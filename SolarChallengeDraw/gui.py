@@ -5,11 +5,13 @@ Written by Jotham Gates, 20/10/2025"""
 from __future__ import annotations
 from enum import Enum
 import tkinter as tk
+from typing import List
 import ttkbootstrap as ttk
 import ttkbootstrap.constants as ttkc
 import ttkbootstrap.tableview as tableview
 from abc import ABC, abstractmethod
 import datetime
+from car import Car
 from knockout import KnockoutEvent
 from knockout_sheet_elements import (
     InteractiveNumberBoxFactory,
@@ -17,6 +19,7 @@ from knockout_sheet_elements import (
 )
 from knockout_sheet import KnockoutSheet
 from file_picker import FilePicker
+from save_load import JSONLoader
 
 
 class AppTab(ABC):
@@ -95,16 +98,26 @@ class KnockoutTab(AppTab):
             filetypes=(("PDF files", "*.pdf"),),
             initial_dir="./",
             initial_file="knockout_draw.pdf",
-            title="Select a location to save the knockout draw",
+            title="Select a location to save the knockout draw in PDF fomat.",
+        )
+        self._json_loader = JSONLoader(filename="")
+        self._export_json_filename = FilePicker(
+            default_extension=".json",
+            filetypes=(("JSON docs", "*.json"),),
+            initial_dir="./",
+            initial_file="knockout_draw.json",
+            title="Select a location to save the knockout draw in JSON format."
         )
         # Create one canvas for display and another for printing with the different number entry boxes.
         self._gui_sheet = KnockoutSheet(self._frame, 1, 0)
         self._print_sheet = KnockoutSheet(self._frame, None, None)
 
-    def draw_event(self, event: KnockoutEvent) -> None:
+    def draw_event(self, event: KnockoutEvent, cars:List[Car]) -> None:
         """Draws the event on screen and in the print canvas."""
         self._gui_sheet.draw_canvas(event, InteractiveNumberBoxFactory())
         self._print_sheet.draw_canvas(event, PrintNumberBoxFactory())
+        self._json_loader.knockout = event
+        self._json_loader.cars = cars
 
     class PaperSizes(Enum):
         """List of paper sizes in mm. Note that the aspect ration is currently always set for ISO A paper."""
@@ -116,10 +129,21 @@ class KnockoutTab(AppTab):
         """Draws the title bar."""
         self._title_bar = ttk.Frame(self._frame)
         self._title_bar.grid(row=0, column=0, columnspan=2, sticky=ttkc.NSEW)
-        self._title_bar.columnconfigure(0, weight=1)
-        ttk.Button(self._title_bar, text="Save PDF", command=self._export_pdf).grid(
+        self._title_bar.columnconfigure((0, 1), weight=1)
+        ttk.Button(self._title_bar, text="Save as JSON", command=self._save_json).grid(
             row=0, column=0, sticky=ttkc.NSEW
         )
+        ttk.Button(self._title_bar, text="Save PDF", command=self._export_pdf).grid(
+            row=0, column=1, sticky=ttkc.NSEW
+        )
+
+    def _save_json(self) -> None:
+        """Exports the event to a JSON file."""
+        filename = self._export_json_filename.request()
+        if filename is not None:
+            # Writing to filename first avoids wiping the saved filename if the request is cancelled or fails.
+            self._json_loader.filename = filename
+            self._json_loader.save()
 
     def _export_pdf(self) -> None:
         """Exports the sheet."""

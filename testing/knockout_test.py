@@ -13,6 +13,7 @@ from knockout import *
 from car import *
 from knockout_sheet import *
 from knockout_sheet_elements import *
+from save_load import *
 
 
 class TestRace(unittest.TestCase):
@@ -349,7 +350,9 @@ def make_demo_list() -> List[Car]:
 
 
 def load_demo_list() -> List[Car]:
-    return load_cars(relative_path("test_cars.csv"))
+    csv_loader = CarCSVLoader(relative_path("test_cars.csv"))
+    csv_loader.load()
+    return csv_loader.cars
 
 
 # class TestCar(unittest.TestCase):

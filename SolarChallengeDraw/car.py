@@ -1,19 +1,10 @@
+from __future__ import annotations
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import List
+from typing import Any, Dict
+
 import numpy as np
 import pandas as pd
-
-
-class CarTableFields(StrEnum):
-    CAR_ID = "Car ID"
-    SCHOOL_ID = "School ID"
-    CAR_NAME = "Car name"
-    SCRUITINEERED = "Scruitineered"
-    PRESENT_ROUND_ROBIN = "Present for round robin"
-    PRESENT_KNOCKOUT = "Present for knockout"
-    POINTS = "Points"
-
 
 @dataclass
 class Car:
@@ -27,31 +18,40 @@ class Car:
 
     def __repr__(self) -> str:
         return f"<{self.car_id:>3d}, {self.points:>2.0f}>"
-
-
-def load_cars(csv_filename: str) -> List[Car]:
-    """Loads a list of cars from a CSV file.
-
-    Args:
-        csv_filename (str): The file path to load the CSV from.
-        event_id (int, optional): The ID of the event to assign to the car. Defaults to 0.
-
-    Returns:
-        List[Car]: The list of cars.
-    """
-    df = pd.read_csv(csv_filename)
-    cars: List[Car] = []
-    for _, row in df.iterrows():
-        cars.append(
-            Car(
-                car_id=row[CarTableFields.CAR_ID],
-                school_id=row[CarTableFields.SCHOOL_ID],
-                car_name=row[CarTableFields.CAR_NAME],
-                car_scruitineered=row[CarTableFields.SCRUITINEERED],
-                present_round_robin=row[CarTableFields.PRESENT_ROUND_ROBIN],
-                present_knockout=row[CarTableFields.PRESENT_KNOCKOUT],
-                points=row[CarTableFields.POINTS] if not np.isnan(row[CarTableFields.POINTS]) else 0
-            )
+    
+    class Fields(StrEnum):
+        CAR_ID = "Car ID"
+        SCHOOL_ID = "School ID"
+        CAR_NAME = "Car name"
+        SCRUITINEERED = "Scruitineered"
+        PRESENT_ROUND_ROBIN = "Present for round robin"
+        PRESENT_KNOCKOUT = "Present for knockout"
+        POINTS = "Points"
+    
+    def to_dict(self) -> Dict[Car.Fields, Any]:
+        return {
+            self.Fields.CAR_ID: self.car_id,
+            self.Fields.SCHOOL_ID: self.school_id,
+            self.Fields.CAR_NAME: self.car_name,
+            self.Fields.SCRUITINEERED: self.car_scruitineered,
+            self.Fields.PRESENT_ROUND_ROBIN: self.present_round_robin,
+            self.Fields.PRESENT_KNOCKOUT: self.present_knockout,
+            self.Fields.POINTS: self.points
+        }
+    
+    @classmethod
+    def from_dict(cls, dt:Dict[str, Any]) -> Car:
+        car_id = dt[cls.Fields.CAR_ID]
+        assert not pd.isna(car_id), "Invalid car ID provided."
+        assert not pd.isna(dt[cls.Fields.SCHOOL_ID]), f"Invalid school ID provided for car {car_id}."
+        assert not pd.isna(dt[cls.Fields.CAR_NAME]), f"Invalid car name provided for car {car_id}."
+        assert not pd.isna(dt[cls.Fields.POINTS]), f"Invalid points provided for car {car_id}."
+        return Car(
+            car_id=dt[cls.Fields.CAR_ID],
+            school_id=dt[cls.Fields.SCHOOL_ID],
+            car_name=dt[cls.Fields.CAR_NAME],
+            car_scruitineered=bool(dt[cls.Fields.SCRUITINEERED]),
+            present_round_robin=bool(dt[cls.Fields.PRESENT_ROUND_ROBIN]),
+            present_knockout=bool(dt[cls.Fields.PRESENT_KNOCKOUT]),
+            points=dt[cls.Fields.POINTS],
         )
-
-    return cars

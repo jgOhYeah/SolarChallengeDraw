@@ -17,18 +17,12 @@ if TYPE_CHECKING:
     from knockout import AuxilliaryRaceManager
 
 
-class BranchType(Enum):
+class BranchType(StrEnum):
     """Represents the type of the branch and whether the value should be edited."""
 
-    FIXED = (
-        auto()
-    )  # Used for the initial round where the competitors are fixed (not editable).
-    DEPENDENT_EDITABLE = (
-        auto()
-    )  # This branch depends on a previous race and may be edited.
-    DEPENDENT_NOT_EDITABLE = (
-        auto()
-    )  # This branch depends on a previous race, but may not be edited.
+    FIXED = "FIXED"  # Used for the initial round where the competitors are fixed (not editable).
+    DEPENDENT_EDITABLE = "DEPENDENT_EDITABLE"  # This branch depends on a previous race and may be edited.
+    DEPENDENT_NOT_EDITABLE = "DEPENDENT_NOT_EDITABLE"  # This branch depends on a previous race, but may not be edited.
 
 
 class FillProbability(IntEnum):
@@ -649,3 +643,150 @@ class Race(Winnable):
             self.Fields.WINNER_NEXT_RACE: name_or_none(self.winner_next_race),
             self.Fields.LOSER_NEXT_RACE: name_or_none(self.loser_next_race),
         } | super().to_dict()
+
+
+class Loading(ABC):
+    """A base class for objects that can be loaded from a dictionary and need placeholder references replaced once everything is created."""
+
+    @abstractmethod
+    def fix_links(
+        self, race_dict: Dict[str, LoadingRace | LoadingPodium], cars: Dict[int, Car]
+    ) -> None:
+        """Fixes the links by replacing placeholder references with the actual object.
+
+        Args:
+            race_dict (Dict[str, LoadingRace | LoadingPodium]): All the races.
+            cars (Dict[int, Car]): All the cars.
+        """
+        pass
+
+
+class LoadingBranch(RaceBranch, Loading):
+    """A RaceBranch with extra placeholders for loading."""
+
+    def __init__(self, dictionary: Dict[RaceBranch.Fields, Any]) -> None:
+        super().__init__(
+            seed=dictionary[self.Fields.SEED],
+            branch_type=BranchType(dictionary[self.Fields.TYPE]),
+            prev_race=None,
+            car=None,
+            filled=dictionary[self.Fields.FILLED],
+        )
+        # We need references to the actual object rather than IDs. We will save them until later.
+        self._placeholder_prev_race: str | None = dictionary[self.Fields.PREV_RACE]
+        self._placeholder_car: int | None = dictionary[self.Fields.CAR]
+
+    def fix_links(
+        self, race_dict: Dict[str, LoadingRace | LoadingPodium], cars: Dict[int, Car]
+    ) -> None:
+        if self._placeholder_prev_race is not None:
+            actual = race_dict[self._placeholder_prev_race]
+            assert not isinstance(
+                actual, LoadingPodium
+            ), "A podium cannot be a previous race."
+            self.prev_race = actual
+
+        if self._placeholder_car is not None:
+            self.car = cars[self._placeholder_car]
+
+
+class LoadingRace(Race, Loading):
+    """A Race object with extra placeholders for loading."""
+
+    def __init__(self, dictionary: Dict[Race.Fields, Any], aux_race: bool) -> None:
+        super().__init__(
+            left_branch=LoadingBranch(dictionary[self.Fields.LEFT_BRANCH]),
+            right_branch=LoadingBranch(dictionary[self.Fields.RIGHT_BRANCH]),
+            winner_next_race=None,
+            loser_next_race=None,
+            is_auxilliary_race=aux_race,
+            race_number=dictionary[self.Fields.RACE_NUMBER],
+        )
+        self._placeholder_winner_next_race: str = dictionary[
+            self.Fields.WINNER_NEXT_RACE
+        ]
+        self._placeholder_loser_next_race: str = dictionary[self.Fields.LOSER_NEXT_RACE]
+
+    @classmethod
+    def load_round_from_dict(
+        cls,
+        round_data: List[Dict[Race.Fields, Any]],
+        aux_race: bool,
+        race_dict: Dict[str, LoadingRace | LoadingPodium],
+    ) -> List[LoadingRace]:
+        """Loads a round of races.
+        If each round was an object instead of a list this should be in that."""
+        round = []
+        for race_data in round_data:
+            race = LoadingRace(race_data, aux_race=aux_race)
+            round.append(race)
+            race_dict[race.name()] = race
+
+        return round
+
+    @classmethod
+    def fix_round_links(
+        cls,
+        round: List[LoadingRace],
+        race_dict: Dict[str, LoadingRace | LoadingPodium],
+        cars: Dict[int, Car],
+    ) -> None:
+        for race in round:
+            race.fix_links(race_dict, cars)
+
+    def fix_links(
+        self, race_dict: Dict[str, LoadingRace | LoadingPodium], cars: Dict[int, Car]
+    ) -> None:
+        assert isinstance(
+            self.left_branch, LoadingBranch
+        ), "The left branch should be of type LoadingBranch"
+        self.left_branch.fix_links(race_dict, cars)
+        assert isinstance(
+            self.right_branch, LoadingBranch
+        ), "The right branch should be of type LoadingBranch"
+        self.right_branch.fix_links(race_dict, cars)
+
+        if self._placeholder_winner_next_race is not None:
+            self.winner_next_race = race_dict[self._placeholder_winner_next_race]
+        if self._placeholder_loser_next_race is not None:
+            self.loser_next_race = race_dict[self._placeholder_loser_next_race]
+
+
+class LoadingPodium(Podium, Loading):
+    """A podium object that can be loaded from a dictionary."""
+
+    def __init__(self, dictionary: Dict[Podium.Fields, Any]) -> None:
+        self.position = dictionary[Podium.Fields.POSITION]
+        self.branch = LoadingBranch(dictionary[Podium.Fields.BRANCH])
+
+    @classmethod
+    def load_podiums_from_dict(
+        cls,
+        podiums_data: List[Dict[Podium.Fields, Any]],
+        race_dict: Dict[str, LoadingRace | LoadingPodium],
+    ) -> List[LoadingPodium]:
+        podiums: List[LoadingPodium] = []
+        for podium_data in podiums_data:
+            podium = LoadingPodium(podium_data)
+            race_dict[podium.name()] = podium
+            podiums.append(podium)
+
+        return podiums
+
+    def fix_links(
+        self, race_dict: Dict[str, LoadingRace | LoadingPodium], cars: Dict[int, Car]
+    ) -> None:
+        assert isinstance(
+            self.branch, LoadingBranch
+        ), "The branch should be of type LoadingBranch"
+        self.branch.fix_links(race_dict, cars)
+
+    @classmethod
+    def fix_podiums_links(
+        cls,
+        podiums: List[LoadingPodium],
+        race_dict: Dict[str, LoadingRace | LoadingPodium],
+        cars: Dict[int, Car],
+    ) -> None:
+        for podium in podiums:
+            podium.fix_links(race_dict, cars)

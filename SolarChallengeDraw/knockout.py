@@ -5,12 +5,14 @@ Written by Jotham Gates, 21/10/2025"""
 from __future__ import annotations
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Any, Dict, Iterable, List, Tuple, cast
+from typing import Any, Dict, Iterable, List, Sequence, Tuple, cast
 import numpy as np
 
 from car import Car
 from knockout_race import (
     FillProbability,
+    LoadingPodium,
+    LoadingRace,
     Race,
     RaceBranch,
     BranchType,
@@ -322,13 +324,17 @@ class RoundId:
 class AuxilliaryRaceManager:
     """Class that manages axilliary races."""
 
-    def __init__(self, max_races: int) -> None:
+    def __init__(self, races: List[Race]) -> None:
+        self.races = races
+
+    @classmethod
+    def create_empty(cls, max_races: int) -> AuxilliaryRaceManager:
         """Initialises the race manager with a given number of races.
 
         Args:
             max_races (int): The number of races.
         """
-        self.races = [
+        races = [
             Race(
                 left_branch=RaceBranch(-1, BranchType.DEPENDENT_NOT_EDITABLE),
                 right_branch=RaceBranch(-1, BranchType.DEPENDENT_NOT_EDITABLE),
@@ -337,6 +343,7 @@ class AuxilliaryRaceManager:
             )
             for i in range(max_races)
         ]
+        return AuxilliaryRaceManager(races)
 
     def _get_first_free(self) -> Race:
         """Returns the first unused auxilliary race.
@@ -460,24 +467,61 @@ class AuxilliaryRaceManager:
 class KnockoutEvent:
     """A class that contains all races for the knockout event."""
 
-    def __init__(self, cars: List[Car], name: str, auxilliary_races: int) -> None:
-        self.winners_bracket = create_empty_draw(len(cars))
-        assign_cars(cars, self.winners_bracket[0])
-        self.losers_bracket = create_loosers_draw(self.winners_bracket)
+    def __init__(
+        self,
+        winners_bracket: List[List[Race]],
+        losers_bracket: List[List[Race]],
+        grand_final: Race,
+        podiums: List[Podium],
+        auxilliary_races: AuxilliaryRaceManager,
+        name: str,
+    ) -> None:
+        self.winners_bracket = winners_bracket
+        self.losers_bracket = losers_bracket
+        self.grand_final = grand_final
+        self.podiums = podiums
+        self.auxilliary_races = auxilliary_races
         self.name = name
+
+    @classmethod
+    def new_from_cars(
+        cls, cars: List[Car], name: str, max_auxilliary_races: int
+    ) -> KnockoutEvent:
+        """Creates a new, relatively empty knockout event from a list of cars alone.
+
+        Args:
+            cars (List[Car]): The cars to use to create the event.
+            name (str): The name of the event.
+            max_auxilliary_races (int): The maximum number of auxilliary races to allow.
+
+        Returns:
+            KnockoutEvent: The knockout event that has been created.
+        """
+        winners_bracket = create_empty_draw(len(cars))
+        assign_cars(cars, winners_bracket[0])
+        losers_bracket = create_loosers_draw(winners_bracket)
         assert (
-            len(self.winners_bracket[-1]) == 1
+            len(winners_bracket[-1]) == 1
         ), "Should only be one race in the last round."
         assert (
-            len(self.losers_bracket[-1]) == 1
+            len(losers_bracket[-1]) == 1
         ), "Should only be one race in the last round."
-        self.grand_final, self.podiums = add_grand_final(
-            self.winners_bracket[-1][0],
-            self.losers_bracket[-1][0],
-            self.losers_bracket[-2][0],
+        grand_final, podiums = add_grand_final(
+            winners_bracket[-1][0],
+            losers_bracket[-1][0],
+            losers_bracket[-2][0],
         )
-        self.auxilliary_races = AuxilliaryRaceManager(auxilliary_races)
-        self._number_races()
+        auxilliary_races = AuxilliaryRaceManager.create_empty(max_auxilliary_races)
+        event = KnockoutEvent(
+            winners_bracket=winners_bracket,
+            losers_bracket=losers_bracket,
+            grand_final=grand_final,
+            podiums=podiums,
+            auxilliary_races=auxilliary_races,
+            name=name,
+        )
+        event.number_races()
+        return event
 
     def calculate_play_order(self) -> List[RoundId]:
         """Determines the order that the event should be played.
@@ -511,7 +555,7 @@ class KnockoutEvent:
         ), "Incorrect number of rounds in the play order."
         return play_order
 
-    def _number_races(self) -> None:
+    def number_races(self) -> None:
         # Assigns a number to each race, based on the play order.
         play_order = self.calculate_play_order()
         start_number = 1
@@ -572,6 +616,12 @@ class KnockoutEvent:
         PODIUMS = "Podiums"
 
     def to_dict(self) -> Dict[KnockoutEvent.Fields, Any]:
+        """Dumps the knockout event to a dictionary object.
+
+        Returns:
+            Dict[KnockoutEvent.Fields, Any]: The dictionary object generated from the event.
+        """
+
         def bracket_to_dict(
             bracket: List[List[Race]],
         ) -> List[List[Dict[Winnable.Fields, Any]]]:
@@ -585,3 +635,92 @@ class KnockoutEvent:
             self.Fields.AUX_RACES: self.auxilliary_races.to_dict(),
             self.Fields.PODIUMS: [p.to_dict() for p in self.podiums],
         }
+
+    @classmethod
+    def from_dict(
+        cls, data: Dict[KnockoutEvent.Fields, Any], cars: List[Car]
+    ) -> KnockoutEvent:
+        """Reconstructs a KnockoutEvent object from a dictionary.
+
+        Args:
+            data (Dict[KnockoutEvent.Fields, Any]): The dictionary to load from.
+            cars (List[Car]): The list of cars to look up and link to.
+
+        Returns:
+            KnockoutEvent: Knockout event created from the dictionary.
+        """
+
+        # Make cars easily searchable
+        def make_cars_dict() -> Dict[int, Car]:
+            """Creates a dictionary of cars to look up by number easily."""
+            result: Dict[int, Car] = {}
+            for car in cars:
+                result[car.car_id] = car
+            return result
+
+        cars_dict = make_cars_dict()
+
+        # Dictionary so that races can be searchable as well.
+        race_dict: Dict[str, LoadingRace | LoadingPodium] = {}
+
+        def load_bracket(field: KnockoutEvent.Fields) -> List[List[LoadingRace]]:
+            """Loads a bracket from the dictionary.
+
+            Args:
+                field (KnockoutEvent.Fields): The field to select the bracket to load.
+
+            Returns:
+                List[List[LoadingRace]]: The bracket.
+            """
+            bracket_data: List[List[Dict[Race.Fields, Any]]] = data[field]
+            bracket: List[List[LoadingRace]] = []
+            for round_data in bracket_data:
+                round = LoadingRace.load_round_from_dict(
+                    round_data, False, race_dict
+                )  # Auxilliary races are packaged in a round, but not brackets.
+                bracket.append(round)
+
+            return bracket
+
+        # Brackets and grand final.
+        winners_bracket = load_bracket(cls.Fields.WINNERS_BRACKET)
+        losers_bracket = load_bracket(cls.Fields.LOSERS_BRACKET)
+        grand_final = LoadingRace(data[cls.Fields.GRAND_FINAL], False)
+        race_dict[grand_final.name()] = grand_final
+
+        # Aux races
+        aux_races_list = LoadingRace.load_round_from_dict(
+            round_data=data[cls.Fields.AUX_RACES][AuxilliaryRaceManager.Fields.RACES],
+            aux_race=True,
+            race_dict=race_dict,
+        )
+        aux_races = AuxilliaryRaceManager(
+            cast(List[Race], aux_races_list)
+        )  # Using cast here as python typing is strict for list type checking and I am being lazy.
+
+        # Load podiums
+        podiums_data: List[Dict[Podium.Fields, Any]] = data[cls.Fields.PODIUMS]
+        podiums = LoadingPodium.load_podiums_from_dict(
+            podiums_data=podiums_data, race_dict=race_dict
+        )
+
+        # Fix all the links now everything is in memory.
+        for round in winners_bracket:
+            LoadingRace.fix_round_links(round, race_dict, cars_dict)
+        for round in losers_bracket:
+            LoadingRace.fix_round_links(round, race_dict, cars_dict)
+        grand_final.fix_links(race_dict, cars_dict)
+        LoadingRace.fix_round_links(aux_races_list, race_dict, cars_dict)
+        LoadingPodium.fix_podiums_links(podiums, race_dict, cars_dict)
+
+        name = data[cls.Fields.NAME]
+
+        # We should be ready to create the event.
+        return KnockoutEvent(
+            winners_bracket=cast(List[List[Race]], winners_bracket), # Again being lazy when converting from child to parent.
+            losers_bracket=cast(List[List[Race]], losers_bracket),
+            grand_final=grand_final,
+            podiums=cast(List[Podium], podiums),
+            auxilliary_races=aux_races,
+            name=name,
+        )

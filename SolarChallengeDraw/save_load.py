@@ -93,10 +93,11 @@ class Loader(ABC):
         if self.filename is None:
             raise self.NoFilenameProvidedError("No filename provided to loader.")
 
-    def copy_from(self, loader:Loader) -> None:
+    def copy_from(self, loader: Loader) -> None:
         """Copies the event from one loader to another (good for converting file formats)."""
         self.cars = loader.cars
         self.knockout = loader.knockout
+
 
 class JSONLoader(Loader):
     """Saves and loads knockout events to and from json files."""
@@ -127,6 +128,20 @@ class JSONLoader(Loader):
         with open(cast(str, self.filename), "w") as file:
             json.dump(combined, file, indent=4)
 
+    def load(self) -> None:
+        """Loads the data from the file."""
+        self._check_filename()
+        with open(cast(str, self.filename), "r") as file:
+            combined_dict = json.load(file)
+
+        # Convert back into car objects.
+        cars_list = combined_dict[self.Fields.CARS]
+        self._cars = [Car.from_dict(car_entry) for car_entry in cars_list]
+
+        # Get the knockout event back.
+        knockout_dict = combined_dict[self.Fields.KNOCKOUT]
+        self._knockout = KnockoutEvent.from_dict(knockout_dict, self.cars)
+
 
 class CarCSVLoader(Loader):
     """Loads cars from a CSV file."""
@@ -146,4 +161,8 @@ class CarCSVLoader(Loader):
             Car.from_dict(cast(Dict[str, Any], dt))
             for dt in car_df.to_dict(orient="records")
         ]
-        self.knockout = KnockoutEvent(self.cars, os.path.basename(cast(str, self.filename)), 10)
+        self._knockout = KnockoutEvent.new_from_cars(
+            cars=self.cars,
+            name=os.path.basename(cast(str, self.filename)),
+            max_auxilliary_races=10, # TODO: Make this configurrable.
+        )

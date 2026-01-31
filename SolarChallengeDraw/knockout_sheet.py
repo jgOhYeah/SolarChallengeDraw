@@ -9,6 +9,7 @@ from typing import List, Literal, Tuple, cast
 import numpy as np
 import ttkbootstrap as ttk
 import ttkbootstrap.constants as ttkc
+from tkinter import simpledialog
 from knockout_race import (
     RaceBranch,
     BranchResult,
@@ -185,15 +186,36 @@ class KnockoutSheet:
         event: KnockoutEvent,
     ) -> float:
         """Draws the main title."""
+        NORMAL_TITLE_FONT = (FONT, FONT_SUPTITLE_SIZE)
+        HOVER_TITLE_FONT = (FONT, FONT_SUPTITLE_SIZE, "bold")
         # Titles
-        _, _, _, suptitle_bottom = self.canvas.bbox(
-            self.canvas.create_text(
-                LEFT_MARGIN,
-                TOP_MARGIN,
-                text=event.name,
-                font=(FONT, FONT_SUPTITLE_SIZE),
-                anchor=ttkc.NW,
-            )
+        text_id = self.canvas.create_text(
+            LEFT_MARGIN,
+            TOP_MARGIN,
+            text=event.name,
+            font=NORMAL_TITLE_FONT,
+            anchor=ttkc.NW,
+        )
+        _, _, _, suptitle_bottom = self.canvas.bbox(text_id)
+
+        def edit_title(_) -> None:
+            """Creates a popup to edit the event title."""
+            new_title = simpledialog.askstring("Edit event title", "Please enter a new title for the event")
+            if new_title is not None:
+                print("Updating the event title")
+                event.name = new_title
+                self.canvas.itemconfigure(text_id, text=event.name)
+
+        self.canvas.tag_bind(text_id, "<Button-1>", edit_title)
+        self.canvas.tag_bind(
+            text_id,
+            "<Enter>",
+            func=lambda e: self.canvas.itemconfigure(text_id, font=HOVER_TITLE_FONT),
+        )
+        self.canvas.tag_bind(
+            text_id,
+            "<Leave>",
+            func=lambda e: self.canvas.itemconfigure(text_id, font=NORMAL_TITLE_FONT),
         )
         return suptitle_bottom
 
@@ -395,7 +417,9 @@ class KnockoutSheet:
                 else:
                     return y_spacing(index - 1) / 4 + y_offset(index - 2)
 
-            def show_from_arrows_needed(index: int) -> Tuple[ShowFromArrow, ShowFromArrow]:
+            def show_from_arrows_needed(
+                index: int,
+            ) -> Tuple[ShowFromArrow, ShowFromArrow]:
                 if index == 0:
                     # Show arrows for everything as this is the first losers' round.
                     return (ShowFromArrow.TO_EAST, ShowFromArrow.TO_EAST)

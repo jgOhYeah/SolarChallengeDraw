@@ -25,8 +25,16 @@ def get_arguments() -> argparse.Namespace:
         description="Tool to generate draws for the VMSVC Don Sheridan Kit Car Challenge.",
         epilog="Written by Jotham Gates, 2025.",
     )
-    parser.add_argument(
+    load_args = parser.add_mutually_exclusive_group()
+    load_args.add_argument(
         "-c", "--cars", type=str, default=None, help="CSV file containing cars to load."
+    )
+    load_args.add_argument(
+        "-j",
+        "--json",
+        type=str,
+        default=None,
+        help="Existing knockout event saved in the JSON format to load.",
     )
     parser.add_argument(
         "-g",
@@ -65,11 +73,11 @@ def ghostscript_location(provided: str | None) -> str:
 if __name__ == "__main__":
     args = get_arguments()
     # cars = car.load_cars(args.cars)
-    car_loader = CarCSVLoader(args.cars)
-    car_loader.load()
-    cars = car_loader.cars
-    knockout_event = knockout.KnockoutEvent(cars, "Test event", 10)
-    knockout_event.print()
-    gui_ui = gui.Gui(ghostscript_location(args.ghostscript))
-    gui_ui.knockout.draw_event(knockout_event, cars)
+    # car_loader = CarCSVLoader(args.cars)
+    # car_loader.load()
+    # cars = car_loader.cars
+    # knockout_event = knockout.KnockoutEvent(cars, "Test event", 10)
+    # knockout_event.print()
+    gui_ui = gui.Gui(ghostscript_location(args.ghostscript), args.cars, args.json)
+    # gui_ui.knockout.draw_event(knockout_event, cars)
     gui_ui.run()

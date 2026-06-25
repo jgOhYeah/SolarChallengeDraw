@@ -1268,11 +1268,33 @@ class AuxilliaryRaceSheet:
 
 
 class ArrowBetweenRounds:
-    """Class for an arrow that gives a hint as to the order in which rounds should be run.
-    """
-    def __init__(self, sheet: KnockoutSheet, from_coords:Tuple[float, float], to_coords:Tuple[float, float]) -> None:
+    """Class for an arrow that gives a hint as to the order in which rounds should be run."""
+
+    def __init__(
+        self,
+        sheet: KnockoutSheet,
+        from_coords: Tuple[float, float],
+        to_coords: Tuple[float, float],
+    ) -> None:
         self._sheet = sheet
-        self._draw([from_coords, to_coords]) # TODO: Not straight arrows for diagonal.
+        if from_coords[0] == to_coords[0]:
+            # Same X values - Vertical line.
+            path = [from_coords, to_coords]
+        else:
+            # Sideways translation involved. Add some additional points to look nice.
+            LINE_VERTICAL = 50
+            halfway_x = (from_coords[0] + to_coords[0]) / 2
+            path =[
+                from_coords,
+                (from_coords[0], from_coords[1] + LINE_VERTICAL),
+                (halfway_x, from_coords[1] + LINE_VERTICAL),
+                (halfway_x, to_coords[1] - LINE_VERTICAL),
+                (to_coords[0], to_coords[1] - LINE_VERTICAL),
+                to_coords
+            ]
+        
+        self._draw(path)  # TODO: Not straight arrows for diagonal.
+
 
     def _draw(self, path: List[Tuple[float, float]]) -> None:
         """Draws an arrow through a list of points (x y pairs)."""
@@ -1283,9 +1305,9 @@ class ArrowBetweenRounds:
         line = self._sheet.canvas.create_line(
             path_unstacked,
             arrow="last",
-            smooth=True,
+            smooth=False,
             width=EVENT_ORDER_ARROW_THICKNESS,
             fill=EVENT_ORDER_ARROW_COLOUR,
-            arrowshape=(24,30,9)
+            arrowshape=(24, 30, 9),
         )
         self._sheet.canvas.tag_lower(line)

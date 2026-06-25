@@ -45,13 +45,17 @@ SHORT_TEXT_MARGIN = TEXT_MARGIN / 2
 WINNERS_INITIAL_SPACING = 55
 LOSERS_INITIAL_SPACING = 80
 TEXT_LINE_HEIGHT = 12
-ARROW_HEIGHT = 15
-ARROW_WIDTH = 20
+HINT_ARROW_HEIGHT = 15
+HINT_ARROW_WIDTH = 20
+EVENT_ORDER_ARROW_THICKNESS = 15
+EVENT_ORDER_ARROW_COLOUR = "#007d08"
 BRACKET_VERTICAL_SEPARATION = 50
 BRACKET_LINE_THICKNESS = 2
 FIRST_COLUMN_HINT_WIDTH = LABEL_WIDTH + 50
 COLUMN_WIDTH = LABEL_WIDTH + 2 * TEXT_MARGIN + 2 * HORIZONTAL_LINE_LENGTH
-AUX_RACES_SECTION_WIDTH = COLUMN_WIDTH + LABEL_WIDTH + 2 * TEXT_MARGIN + ARROW_WIDTH
+AUX_RACES_SECTION_WIDTH = (
+    COLUMN_WIDTH + LABEL_WIDTH + 2 * TEXT_MARGIN + HINT_ARROW_WIDTH
+)
 
 
 class NumberBox(ABC):
@@ -707,17 +711,17 @@ class HintToArrow(HintArrow):
         points = [
             x,
             y,
-            x + ARROW_WIDTH / 3,
-            y + ARROW_HEIGHT * flip,
-            x + 2 * ARROW_WIDTH / 3,
-            y + ARROW_HEIGHT * flip,
-            x + ARROW_WIDTH,
-            y + ARROW_HEIGHT * flip,
+            x + HINT_ARROW_WIDTH / 3,
+            y + HINT_ARROW_HEIGHT * flip,
+            x + 2 * HINT_ARROW_WIDTH / 3,
+            y + HINT_ARROW_HEIGHT * flip,
+            x + HINT_ARROW_WIDTH,
+            y + HINT_ARROW_HEIGHT * flip,
         ]
         sheet.canvas.create_line(points, arrow="last", smooth=True)
         text_handle = sheet.canvas.create_text(
-            x + ARROW_WIDTH + SHORT_TEXT_MARGIN,
-            y + ARROW_HEIGHT * flip,
+            x + HINT_ARROW_WIDTH + SHORT_TEXT_MARGIN,
+            y + HINT_ARROW_HEIGHT * flip,
             anchor=ttkc.W,
             font=(FONT, FONT_SMALL_SIZE),
         )
@@ -846,11 +850,11 @@ class HintFromArrow(HintArrow):
         Returns:
             int: The handle of the text.
         """
-        points = [x - ARROW_WIDTH - SHORT_TEXT_MARGIN, y, x - SHORT_TEXT_MARGIN, y]
+        points = [x - HINT_ARROW_WIDTH - SHORT_TEXT_MARGIN, y, x - SHORT_TEXT_MARGIN, y]
         sheet.canvas.create_line(points, arrow="last", smooth=True)
 
         return sheet.canvas.create_text(
-            x - ARROW_WIDTH - 2 * SHORT_TEXT_MARGIN,
+            x - HINT_ARROW_WIDTH - 2 * SHORT_TEXT_MARGIN,
             y,
             anchor=ttkc.E,
             font=(FONT, FONT_SMALL_SIZE),
@@ -908,16 +912,16 @@ class HintFromAboveArrow(HintFromArrow):
     def _draw(self, sheet: KnockoutSheet, x: float, y: float) -> int:
         arrow_x = x - SHORT_TEXT_MARGIN
         arrow_y = y
-        text_x = arrow_x - 2 * ARROW_WIDTH / 3 + TEXT_MARGIN
-        text_y = y - ARROW_HEIGHT - TEXT_MARGIN
+        text_x = arrow_x - 2 * HINT_ARROW_WIDTH / 3 + TEXT_MARGIN
+        text_y = y - HINT_ARROW_HEIGHT - TEXT_MARGIN
         points = [
             text_x - SHORT_TEXT_MARGIN,
             text_y,
-            arrow_x - 2 * ARROW_WIDTH / 3,
+            arrow_x - 2 * HINT_ARROW_WIDTH / 3,
             text_y,
-            arrow_x - ARROW_WIDTH,
+            arrow_x - HINT_ARROW_WIDTH,
             0.5 * (text_y + arrow_y),
-            arrow_x - 2 * ARROW_WIDTH / 3,
+            arrow_x - 2 * HINT_ARROW_WIDTH / 3,
             arrow_y,
             arrow_x,
             arrow_y,
@@ -1243,7 +1247,7 @@ class AuxilliaryRaceSheet:
             self._races.append(drawing)
             y_centre = self._box.y_pos + BRACKET_VERTICAL_SEPARATION + TEXT_MARGIN
             drawing.draw_race(
-                x=top_left[0] + TEXT_MARGIN + ARROW_WIDTH,
+                x=top_left[0] + TEXT_MARGIN + HINT_ARROW_WIDTH,
                 y_centre=y_centre,
                 y_spacing=BRACKET_VERTICAL_SEPARATION,
                 columns_wide=1,
@@ -1261,3 +1265,27 @@ class AuxilliaryRaceSheet:
         for race, drawing in zip(self._event.auxilliary_races.races, self._races):
             drawing.assign_race(race)
             drawing.update()
+
+
+class ArrowBetweenRounds:
+    """Class for an arrow that gives a hint as to the order in which rounds should be run.
+    """
+    def __init__(self, sheet: KnockoutSheet, from_coords:Tuple[float, float], to_coords:Tuple[float, float]) -> None:
+        self._sheet = sheet
+        self._draw([from_coords, to_coords]) # TODO: Not straight arrows for diagonal.
+
+    def _draw(self, path: List[Tuple[float, float]]) -> None:
+        """Draws an arrow through a list of points (x y pairs)."""
+        path_unstacked = []
+        for pair in path:
+            path_unstacked.extend(pair)
+
+        line = self._sheet.canvas.create_line(
+            path_unstacked,
+            arrow="last",
+            smooth=True,
+            width=EVENT_ORDER_ARROW_THICKNESS,
+            fill=EVENT_ORDER_ARROW_COLOUR,
+            arrowshape=(24,30,9)
+        )
+        self._sheet.canvas.tag_lower(line)

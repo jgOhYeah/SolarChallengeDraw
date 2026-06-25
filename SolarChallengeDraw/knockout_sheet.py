@@ -18,10 +18,12 @@ from knockout_race import (
 )
 from knockout import (
     KnockoutEvent,
+    RoundId,
+    RoundType,
 )
 from knockout_sheet_elements import (
-    ARROW_HEIGHT,
-    ARROW_WIDTH,
+    HINT_ARROW_HEIGHT,
+    HINT_ARROW_WIDTH,
     AUX_RACES_SECTION_WIDTH,
     BOTTOM_MARGIN,
     BRACKET_VERTICAL_SEPARATION,
@@ -41,6 +43,7 @@ from knockout_sheet_elements import (
     TEXT_MARGIN,
     TOP_MARGIN,
     WINNERS_INITIAL_SPACING,
+    ArrowBetweenRounds,
     AuxilliaryRaceSheet,
     BracketLineSet,
     BracketLineSetBye,
@@ -200,7 +203,9 @@ class KnockoutSheet:
 
         def edit_title(_) -> None:
             """Creates a popup to edit the event title."""
-            new_title = simpledialog.askstring("Edit event title", "Please enter a new title for the event")
+            new_title = simpledialog.askstring(
+                "Edit event title", "Please enter a new title for the event"
+            )
             if new_title is not None:
                 print("Updating the event title")
                 event.name = new_title
@@ -249,7 +254,7 @@ class KnockoutSheet:
             next_round_height: float,
             next_round_offset: float,
             round_name: str,
-        ) -> None:
+        ) -> Tuple[float, float, float]:
             """Draws a box around a round in either the winners' or losers' brackets.
 
             Args:
@@ -261,7 +266,7 @@ class KnockoutSheet:
                 round_name (str): Round name to print.
 
             Returns:
-                float: The x coordinate of the right side of the races in the round.
+                float: Attachment points for to / from arrows.
             """
             # Draw the box and title.
             BOX_PADDING = 20
@@ -284,16 +289,20 @@ class KnockoutSheet:
                     fill=TEXT_FILL,
                 )
             )
+            box_top = text_y_top - TEXT_MARGIN
+            box_bottom = y_centre - offset + (height / 2) + BOX_PADDING
             rect = self.canvas.create_rectangle(
                 box_centre - box_half_width,
-                text_y_top - TEXT_MARGIN,
+                box_top,
                 box_centre + box_half_width,
-                y_centre - offset + (height / 2) + BOX_PADDING,
+                box_bottom,
                 width=0,
                 fill=BOX_FILL,
                 outline=BOX_FILL,
             )
             self.canvas.tag_lower(rect)
+
+            return box_centre, box_top - SHORT_TEXT_MARGIN, box_bottom + SHORT_TEXT_MARGIN
 
         def draw_round(
             x: float,
@@ -350,9 +359,27 @@ class KnockoutSheet:
             y_centre: float,
             y_spacing_initial: float,
             rounds: List[List[Race]],
-        ) -> Tuple[float, float]:
+        ) -> Tuple[float, float, List[Tuple[float, float, float]]]:
+            """Draws the winner's bracket.
+
+            Args:
+                x (float): The initial x position to start with on the left hand side.
+                y_centre (float): The centre of the each round. Unlike loser's this doesn't shift between rounds.
+                y_spacing_initial (float): The initial spacing between races in a round.
+                rounds (List[List[Race]]): The rounds to draw.
+
+            Returns:
+                Tuple[float, float, List[Tuple[float, float, float]]]: x position of end, y position of end, list of x
+                                                                       positions, tops and bottoms of rounds to attach
+                                                                       arrows to for event order hints.
+            """
+
             def y_spacing(index) -> float:
                 return y_spacing_initial * (2**index)
+
+            event_arrow_attachment: List[Tuple[float, float, float]] = (
+                []
+            )  # Points to attach arrows to.
 
             next_x = x
             for i, round in enumerate(rounds):
@@ -369,28 +396,31 @@ class KnockoutSheet:
                     show_winner_label=False,
                     show_loser_label=True,
                 )
-                draw_round_box(
-                    x_end=next_x,
-                    y_centre=y_centre,
-                    height=round_height(round, y_spacing(i)),
-                    offset=0,
-                    next_round_height=(
-                        0
-                        if i + 1 == len(rounds)
-                        else round_height(rounds[i + 1], y_spacing(i + 1))
-                    ),
-                    next_round_offset=0,
-                    round_name=f"P{i+1}",
+
+                event_arrow_attachment.append(
+                    draw_round_box(
+                        x_end=next_x,
+                        y_centre=y_centre,
+                        height=round_height(round, y_spacing(i)),
+                        offset=0,
+                        next_round_height=(
+                            0
+                            if i + 1 == len(rounds)
+                            else round_height(rounds[i + 1], y_spacing(i + 1))
+                        ),
+                        next_round_offset=0,
+                        round_name=f"P{i+1}",
+                    )
                 )
 
-            return x + len(rounds) * COLUMN_WIDTH, y_centre
+            return x + len(rounds) * COLUMN_WIDTH, y_centre, event_arrow_attachment
 
         def draw_losers_bracket(
             x: float,
             y_centre: float,
             y_spacing_initial: float,
             rounds: List[List[Race]],
-        ) -> Tuple[float, float]:
+        ) -> Tuple[float, float, List[Tuple[float, float, float]]]:
             """Draws the losers bracket.
 
             Args:
@@ -400,7 +430,10 @@ class KnockoutSheet:
                 rounds (List[List[Race]]): The rounds to plot.
 
             Returns:
-                Tuple[float, float]: The x coordinate at the end of the bracket and the centreline of the right hand side.
+                Tuple[float, float, List[Tuple[float, float, float]]]: The x coordinate at the end of the bracket, the
+                                                                       centreline of the right hand side and a list of x
+                                                                       positions, tops and bottoms of rounds to attach
+                                                                       arrows to for event order hints.
             """
 
             def y_spacing(index: int) -> float:
@@ -431,6 +464,10 @@ class KnockoutSheet:
                     # Arrows for them, but not the cars already in the bracket.
                     return (ShowFromArrow.TO_EAST, ShowFromArrow.HIDE)
 
+            event_arrow_attachment: List[Tuple[float, float, float]] = (
+                []
+            )  # Points to attach arrows to.
+
             next_x = x
             for i, round in enumerate(rounds):
                 next_x = draw_round(
@@ -444,25 +481,31 @@ class KnockoutSheet:
                     show_winner_label=False,
                     show_loser_label=False,
                 )
-                draw_round_box(
-                    next_x,
-                    y_centre,
-                    round_height(round, y_spacing(i)),
-                    y_offset(i),
-                    (
-                        0
-                        if i + 1 == len(rounds)
-                        else round_height(rounds[i + 1], y_spacing(i + 1))
-                    ),
-                    y_offset(i + 1),
-                    f"SC{i+1}",
+                event_arrow_attachment.append(
+                    draw_round_box(
+                        x_end=next_x,
+                        y_centre=y_centre,
+                        height=round_height(round, y_spacing(i)),
+                        offset=y_offset(i),
+                        next_round_height=(
+                            0
+                            if i + 1 == len(rounds)
+                            else round_height(rounds[i + 1], y_spacing(i + 1))
+                        ),
+                        next_round_offset=y_offset(i + 1),
+                        round_name=f"SC{i+1}",
+                    )
                 )
 
-            return x + len(rounds) * COLUMN_WIDTH, y_centre - y_offset(len(rounds))
+            return (
+                x + len(rounds) * COLUMN_WIDTH,
+                y_centre - y_offset(len(rounds)),
+                event_arrow_attachment,
+            )
 
         def draw_grand_final(
             winners_end: Tuple[float, float], losers_end: Tuple[float, float]
-        ) -> float:
+        ) -> Tuple[float, Tuple[float, float, float]]:
             """Draws the grand final and any extended lines from the previous rounds.
 
             Args:
@@ -470,7 +513,7 @@ class KnockoutSheet:
                 losers_end (Tuple[float, float]): The x and y coordinates of the end of the losers round.
 
             Returns:
-                float: The x coordinate of the right side of the label.
+                float: The x coordinate of the right side of the label, attachment points for arrow from the previous chronological round (x and y).
             """
             # Main bracket.
             gf_y_centre = (winners_end[1] + losers_end[1]) / 2
@@ -486,10 +529,11 @@ class KnockoutSheet:
                 show_winner_label=True,
                 show_loser_label=True,
             )
-            draw_round_box(
+            gf_round_height = round_height([event.grand_final], gf_y_spacing)
+            attach_points = draw_round_box(
                 x_end=right_side - LABEL_WIDTH,
                 y_centre=gf_y_centre,
-                height=round_height([event.grand_final], gf_y_spacing),
+                height=gf_round_height,
                 offset=0,
                 next_round_height=0,
                 next_round_offset=0,
@@ -501,7 +545,7 @@ class KnockoutSheet:
                 event.grand_final.winner_next_race, Podium
             ), "The winner of the grand final must end up with a podium."
 
-            return right_side + TEXT_MARGIN + LABEL_WIDTH
+            return right_side + TEXT_MARGIN + LABEL_WIDTH, attach_points
 
         # Winners' bracket.
         _, _, _, winners_title_bottom = self.canvas.bbox(
@@ -517,7 +561,7 @@ class KnockoutSheet:
         winners_centreline = (
             winners_title_bottom + TEXT_MARGIN + winners_height / 2 + LABEL_HEIGHT / 2
         )
-        win_end = draw_winners_bracket(
+        win_end_x, win_end_y, win_event_order_arrows_attach = draw_winners_bracket(
             x_offset + FIRST_COLUMN_HINT_WIDTH,
             winners_centreline,
             WINNERS_INITIAL_SPACING,
@@ -544,7 +588,7 @@ class KnockoutSheet:
         losers_centreline = (
             losers_title_bottom + TEXT_MARGIN + losers_height / 2 + LABEL_HEIGHT / 2
         )
-        lose_end = draw_losers_bracket(
+        lose_end_x, lose_end_y, lose_event_order_arrows_attach = draw_losers_bracket(
             x_offset + FIRST_COLUMN_HINT_WIDTH,
             losers_centreline,
             LOSERS_INITIAL_SPACING,
@@ -556,12 +600,72 @@ class KnockoutSheet:
             self.canvas.create_line(0, y, self._width, y, fill="red")
 
         # Grand final
-        drawing_width = draw_grand_final(win_end, lose_end) + RIGHT_MARGIN
+        drawing_width, gf_arrow_attach = draw_grand_final(
+            (win_end_x, win_end_y), (lose_end_x, lose_end_y)
+        )
+
+        # Arrows showing the order of the competition.
+        self.draw_event_order_arrows(
+            event,
+            win_event_order_arrows_attach,
+            lose_event_order_arrows_attach,
+            gf_arrow_attach,
+        )
+
+        # Scaling, width and height.
+        drawing_width += RIGHT_MARGIN
         drawing_height = (
             losers_centreline + losers_height / 2 + LABEL_HEIGHT + BOTTOM_MARGIN
         )
         self.set_size(self.a_paper_scale((drawing_width, drawing_height)))
         # self.manual_update()
+
+    def draw_event_order_arrows(
+        self,
+        event: KnockoutEvent,
+        win_attach: List[Tuple[float, float, float]],
+        lose_attach: List[Tuple[float, float, float]],
+        gf_attach: Tuple[float, float, float],
+    ) -> None:
+        def get_coord_set(round_id: RoundId, is_from: bool) -> Tuple[float, float]:
+            match round_id.round_type:
+                case RoundType.WINNERS:
+                    assert (
+                        round_id.round_index is not None
+                    ), f"Round must have an index if it is in the winning bracket."
+                    attach_set = win_attach[round_id.round_index]
+                    if is_from:
+                        return attach_set[0], attach_set[2]
+                    else:
+                        return attach_set[0], attach_set[1]  # To.
+
+                case RoundType.LOSERS:
+                    assert (
+                        round_id.round_index is not None
+                    ), f"Round must have an index if it is in the losing bracket."
+                    attach_set = lose_attach[round_id.round_index]
+                    if is_from:
+                        return attach_set[0], attach_set[2]
+                    else:
+                        return attach_set[0], attach_set[1]  # To.
+
+                case RoundType.GRAND_FINAL:
+                    if is_from:
+                        return gf_attach[0], gf_attach[2]
+                    else:
+                        return gf_attach[0], gf_attach[1]  # To.
+
+                case _:
+                    raise ValueError("Not expecting any points to attach to.")
+
+        order = event.calculate_play_order()
+        for i in range(len(order) - 1):
+            round_from = order[i]
+            round_to = order[i + 1]
+
+            from_coords = get_coord_set(round_from, True)
+            to_coords = get_coord_set(round_to, False)
+            ArrowBetweenRounds(self, from_coords, to_coords)
 
     def update(self) -> None:
         """Updates each item on the sheet."""

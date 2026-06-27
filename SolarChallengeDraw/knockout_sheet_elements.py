@@ -1270,31 +1270,36 @@ class AuxilliaryRaceSheet:
 class ArrowBetweenRounds:
     """Class for an arrow that gives a hint as to the order in which rounds should be run."""
 
+    LINE_VERTICAL = 50
+    LINE_HORIZONTAL = 35
+
     def __init__(
         self,
         sheet: KnockoutSheet,
         from_coords: Tuple[float, float],
         to_coords: Tuple[float, float],
+        vertical_approaches: bool = True,
     ) -> None:
         self._sheet = sheet
         if from_coords[0] == to_coords[0]:
             # Same X values - Vertical line.
             path = [from_coords, to_coords]
-        else:
-            # Sideways translation involved. Add some additional points to look nice.
-            LINE_VERTICAL = 50
+        elif vertical_approaches:
+            # Sideways translation involved. Add some additional points to look nice with vertical approaches for each end.
             halfway_x = (from_coords[0] + to_coords[0]) / 2
-            path =[
+            path = [
                 from_coords,
-                (from_coords[0], from_coords[1] + LINE_VERTICAL),
-                (halfway_x, from_coords[1] + LINE_VERTICAL),
-                (halfway_x, to_coords[1] - LINE_VERTICAL),
-                (to_coords[0], to_coords[1] - LINE_VERTICAL),
-                to_coords
+                (from_coords[0], from_coords[1] + self.LINE_VERTICAL),
+                (halfway_x, from_coords[1] + self.LINE_VERTICAL),
+                (halfway_x, to_coords[1] - self.LINE_VERTICAL),
+                (to_coords[0], to_coords[1] - self.LINE_VERTICAL),
+                to_coords,
             ]
-        
-        self._draw(path)  # TODO: Not straight arrows for diagonal.
+        else:
+            # Right angle approach.
+            path = [from_coords, (to_coords[0], from_coords[1]), to_coords]
 
+        self._draw(path)  # TODO: Not straight arrows for diagonal.
 
     def _draw(self, path: List[Tuple[float, float]]) -> None:
         """Draws an arrow through a list of points (x y pairs)."""
@@ -1311,3 +1316,93 @@ class ArrowBetweenRounds:
             arrowshape=(24, 30, 9),
         )
         self._sheet.canvas.tag_lower(line)
+
+
+class EventStartArrow(ArrowBetweenRounds):
+    def __init__(self, sheet: KnockoutSheet, to_coords: Tuple[float, float]) -> None:
+        from_coords = (
+            to_coords[0] - self.LINE_HORIZONTAL,
+            to_coords[1] - self.LINE_VERTICAL,
+        )
+        super().__init__(sheet, from_coords, to_coords, False)
+
+        # Text message.
+        text_handle = self._sheet.canvas.create_text(
+            from_coords[0] - SHORT_TEXT_MARGIN,
+            from_coords[1],
+            text="Event start",
+            anchor=ttkc.E,
+            font=(FONT, FONT_NORMAL_SIZE),
+            fill=EVENT_ORDER_ARROW_COLOUR,
+        )
+        text_x1, text_y1, text_x2, text_y2 = self._sheet.canvas.bbox(text_handle)
+
+        self._round_rectangle(
+            text_x1 - SHORT_TEXT_MARGIN,
+            text_y1 - SHORT_TEXT_MARGIN,
+            text_x2 + SHORT_TEXT_MARGIN,
+            text_y2 + SHORT_TEXT_MARGIN,
+            outline=EVENT_ORDER_ARROW_COLOUR,
+            radius=10,
+            width=4,
+            fill="",
+        )
+
+    def _round_rectangle(self, x1, y1, x2, y2, radius=25, **kwargs) -> int:
+        """Draws a rounded rectangle.
+        Based on https://stackoverflow.com/a/44100075
+
+        Args:
+            x1 (float): X coordinate.
+            y1 (float): Y coordingate.
+            x2 (float): X coordinate.
+            y2 (float): Y coordinate.
+            radius (int, optional): Radius of the corner in px. Defaults to 25.
+
+        Returns:
+            int: Handle for the polygon object.
+        """
+        points = [
+            x1 + radius,
+            y1,
+            x1 + radius,
+            y1,
+            x2 - radius,
+            y1,
+            x2 - radius,
+            y1,
+            x2,
+            y1,
+            x2,
+            y1 + radius,
+            x2,
+            y1 + radius,
+            x2,
+            y2 - radius,
+            x2,
+            y2 - radius,
+            x2,
+            y2,
+            x2 - radius,
+            y2,
+            x2 - radius,
+            y2,
+            x1 + radius,
+            y2,
+            x1 + radius,
+            y2,
+            x1,
+            y2,
+            x1,
+            y2 - radius,
+            x1,
+            y2 - radius,
+            x1,
+            y1 + radius,
+            x1,
+            y1 + radius,
+            x1,
+            y1,
+        ]
+
+        return self._sheet.canvas.create_polygon(points, **kwargs, smooth=True)

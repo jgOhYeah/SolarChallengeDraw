@@ -48,6 +48,7 @@ from knockout_sheet_elements import (
     BracketLineSet,
     BracketLineSetBye,
     BracketLineSetNormal,
+    EventStartArrow,
     NotesBox,
     NumberBox,
     NumberBoxFactory,
@@ -158,7 +159,7 @@ class KnockoutSheet:
             numbers=numbers,
             show_seed=show_seed,
             x_offset=AUX_RACES_SECTION_WIDTH + LEFT_MARGIN + TEXT_MARGIN,
-            y_offset=suptitle_bottom,
+            y_offset=suptitle_bottom + 45,
         )
         self.draw_notes(event, self._width - RIGHT_MARGIN, self._height - BOTTOM_MARGIN)
         self.draw_aux_races(event, numbers, suptitle_bottom)
@@ -666,6 +667,9 @@ class KnockoutSheet:
             from_coords = get_coord_set(round_from, True)
             to_coords = get_coord_set(round_to, False)
             ArrowBetweenRounds(self, from_coords, to_coords)
+        
+        # Event start message.
+        EventStartArrow(self, get_coord_set(order[0], False))
 
     def update(self) -> None:
         """Updates each item on the sheet."""

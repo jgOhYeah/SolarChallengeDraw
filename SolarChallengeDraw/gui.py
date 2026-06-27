@@ -100,12 +100,7 @@ class RoundRobinTab(AppTab):
 class KnockoutTab(AppTab):
     """Class to handle the knockout round tab."""
 
-    def __init__(
-        self,
-        root: ttk.Notebook,
-        ghostscript_path: str,
-        gui: Gui
-    ) -> None:
+    def __init__(self, root: ttk.Notebook, ghostscript_path: str, gui: Gui) -> None:
         super().__init__(root, "Knockout")
         self._set_enable(False)
         self._ghostscript_path = ghostscript_path
@@ -115,6 +110,7 @@ class KnockoutTab(AppTab):
             initial_dir="./",
             initial_file="knockout_draw.pdf",
             title="the knockout draw in PDF fomat.",
+            read_only=False,
         )
         self._gui = gui
         self.create_title_bar()
@@ -140,7 +136,9 @@ class KnockoutTab(AppTab):
         self._title_bar = ttk.Frame(self._frame)
         self._title_bar.grid(row=0, column=0, columnspan=2, sticky=ttkc.NSEW)
         self._title_bar.columnconfigure((0, 1), weight=1)
-        ttk.Button(self._title_bar, text="Save as JSON", command=self._gui.save_event_as).grid(
+        ttk.Button(
+            self._title_bar, text="Save as JSON", command=self._gui.save_event_as
+        ).grid(
             row=0, column=0, sticky=ttkc.NSEW, padx=(PAD_FULL, PAD_HALF), pady=PAD_FULL
         )
         ttk.Button(self._title_bar, text="Save PDF", command=self._export_pdf).grid(
@@ -178,7 +176,7 @@ class Gui:
             initial_file="knockout_draw.json",
             title="the knockout draw in JSON format.",
             initial_path=initial_json,
-            read_only=False
+            read_only=False,
         )
         self._json_loader = JSONLoader()
         self.csv_path = FilePicker(
@@ -188,20 +186,18 @@ class Gui:
             initial_file="",
             title="the cars to create a new event.",
             initial_path=initial_csv,
-            read_only=True
+            read_only=True,
         )
         self._csv_loader = CarCSVLoader()
         self.loaded: bool = False  # Indicates whether an event is currently loaded.
 
         # Hotkey to save current file
-        self._root.bind('<Control-s>', self.save_event)
+        self._root.bind("<Control-s>", self.save_event)
         notebook = ttk.Notebook(self._root)
         self._events = EventsTab(notebook, gui=self)
         # self._cars = CarsTab(notebook)
         # self._round_robin = RoundRobinTab(notebook)
-        self.knockout = KnockoutTab(
-            notebook, ghostscript_path, self
-        )
+        self.knockout = KnockoutTab(notebook, ghostscript_path, self)
         notebook.pack(expand=True, fill=ttkc.BOTH)
 
         # Load the initial items if requested.
@@ -211,14 +207,14 @@ class Gui:
         elif initial_json is not None:
             print(f"Loading initial JSON: '{initial_json}'.")
             self.load_json_from_path(initial_json)
-        
-    def load_csv_from_path(self, filename:str) -> None:
+
+    def load_csv_from_path(self, filename: str) -> None:
         self._csv_loader.filename = filename
         self._csv_loader.load()
-        self.json_path.ok_to_save = False # Invalidate the previous json file path.
+        self.json_path.ok_to_save = False  # Invalidate the previous json file path.
         self.load_and_draw(self._csv_loader)
-    
-    def load_json_from_path(self, filename:str) -> None:
+
+    def load_json_from_path(self, filename: str) -> None:
         self._json_loader.filename = filename
         self._json_loader.load()
         self.load_and_draw(self._json_loader)

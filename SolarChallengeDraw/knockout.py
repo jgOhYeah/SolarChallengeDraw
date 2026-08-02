@@ -339,7 +339,7 @@ class AuxilliaryRaceManager:
                 left_branch=RaceBranch(-1, BranchType.DEPENDENT_NOT_EDITABLE),
                 right_branch=RaceBranch(-1, BranchType.DEPENDENT_NOT_EDITABLE),
                 is_auxilliary_race=True,
-                race_number=i,
+                race_number=i+1,
             )
             for i in range(max_races)
         ]

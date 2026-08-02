@@ -85,6 +85,7 @@ class NumberBox(ABC):
         aux_race_manager: AuxilliaryRaceManager,
         sheet: KnockoutSheet,
         override_type_editable: bool,
+        is_aux_race: bool
     ) -> None:
         """Initialises the number box.
 
@@ -94,11 +95,18 @@ class NumberBox(ABC):
             race_branch (RaceBranch): The race branch whose number we are to show.
             aux_race_manager (AuxilliaryRaceManager): Manager for auxilliary races.
             sheet (KnockoutSheet): The sheet that is to be called back upon update.
+            override_type_editable (bool): Whether to treat
+                            BranchType.DEPENDENT_NOT_EDITABLE as
+                            BranchType.DEPENDENT_EDITABLE.
+            is_aux_race (bool): True when this number box is part of an
+                                auxilliary race. This changes text that is shown
+                                when impossible to fill.
         """
         self._race_branch = race_branch
         self._aux_race_manager = aux_race_manager
         self._sheet = sheet
         self._override_type_editable = override_type_editable
+        self._is_aux_race = is_aux_race
         self._draw(x, y)
 
     @property
@@ -174,8 +182,12 @@ class NumberBox(ABC):
                 # Filled as empty (DNR)
                 text = self.StrFixedOptions.DNR
             elif self._race_branch.fill_probability() == FillProbability.IMPOSSIBLE:
-                # Impossible to fill.
-                text = self.StrFixedOptions.NOT_APPLICABLE
+                # Impossible to fill because we are in an aux race or have no competitors available.
+                # NA for main brackets, empty for aux races.
+                if not self._is_aux_race:
+                    text = self.StrFixedOptions.NOT_APPLICABLE
+                else:
+                    text = self.StrFixedOptions.EMPTY
             else:
                 # Actually empty.
                 text = self.StrFixedOptions.EMPTY
@@ -199,6 +211,7 @@ class InteractiveNumberBox(NumberBox):
         aux_race_manager: AuxilliaryRaceManager,
         sheet: KnockoutSheet,
         override_type_editable: bool,
+        is_aux_race: bool
     ) -> None:
         """Initialises the number box.
 
@@ -215,7 +228,7 @@ class InteractiveNumberBox(NumberBox):
                 BranchType.DEPENDENT_EDITABLE. Defaults to False.
         """
         super().__init__(
-            x, y, race_branch, aux_race_manager, sheet, override_type_editable
+            x, y, race_branch, aux_race_manager, sheet, override_type_editable, is_aux_race=is_aux_race
         )
         self._in_update = False  # Signals if a change to the combobox should be ignored (somewhat like a semaphore).
 
@@ -409,6 +422,7 @@ class NumberBoxFactory(ABC):
         aux_race_manager: AuxilliaryRaceManager,
         sheet: KnockoutSheet,
         override_type_editable: bool = False,
+        is_aux_race: bool = False
     ) -> NumberBox:
         pass
 
@@ -420,14 +434,15 @@ class NumberBoxFactory(ABC):
         aux_race_manager: AuxilliaryRaceManager,
         sheet: KnockoutSheet,
         override_type_editable: bool = False,
+        is_aux_race: bool = False
     ) -> NumberBox:
         if race_branch is None or race_branch.branch_type != BranchType.FIXED:
             return self._create_not_fixed(
-                x, y, race_branch, aux_race_manager, sheet, override_type_editable
+                x, y, race_branch, aux_race_manager, sheet, override_type_editable, is_aux_race=is_aux_race
             )
         else:
             return InitialNumberBox(
-                x, y, race_branch, aux_race_manager, sheet, override_type_editable
+                x, y, race_branch, aux_race_manager, sheet, override_type_editable, is_aux_race=is_aux_race
             )
 
 
@@ -440,6 +455,7 @@ class InteractiveNumberBoxFactory(NumberBoxFactory):
         aux_race_manager: AuxilliaryRaceManager,
         sheet: KnockoutSheet,
         override_type_editable: bool = False,
+        is_aux_race: bool = False
     ) -> NumberBox:
         return InteractiveNumberBox(
             x=x,
@@ -448,6 +464,7 @@ class InteractiveNumberBoxFactory(NumberBoxFactory):
             aux_race_manager=aux_race_manager,
             sheet=sheet,
             override_type_editable=override_type_editable,
+            is_aux_race=is_aux_race
         )
 
 
@@ -460,9 +477,10 @@ class PrintNumberBoxFactory(NumberBoxFactory):
         aux_race_manager: AuxilliaryRaceManager,
         sheet: KnockoutSheet,
         override_type_editable: bool = False,
+        is_aux_race: bool = False
     ) -> NumberBox:
         return PrintNumberBox(
-            x, y, race_branch, aux_race_manager, sheet, override_type_editable
+            x, y, race_branch, aux_race_manager, sheet, override_type_editable, is_aux_race=is_aux_race
         )
 
 
@@ -1064,6 +1082,7 @@ class RaceDrawing:
         show_from_arrow: ShowFromArrow,
         lowest_hint_background: int | None,
         override_type_editable: bool = False,
+        is_aux_race: bool = False
     ) -> Tuple[NumberBox, HintFromArrow | None]:
         """Draws a numbers box at the specified position.
 
@@ -1086,6 +1105,7 @@ class RaceDrawing:
             aux_race_manager=self._event.auxilliary_races,
             sheet=self._sheet,
             override_type_editable=override_type_editable,
+            is_aux_race=is_aux_race
         )
 
         # Draw the from hint.
@@ -1178,6 +1198,7 @@ class RaceDrawing:
                     race.left_branch,
                     show_from_arrow[0],
                     lowest_hint_background=lowest_hint_background,
+                    is_aux_race=race.is_auxilliary_race
                 ),
                 self.draw_number(
                     x,
@@ -1185,6 +1206,7 @@ class RaceDrawing:
                     race.right_branch,
                     show_from_arrow[1],
                     lowest_hint_background=lowest_hint_background,
+                    is_aux_race=race.is_auxilliary_race
                 ),
             )
             self._lineset = BracketLineSetNormal(
@@ -1210,6 +1232,7 @@ class RaceDrawing:
                     race.theoretical_winner(),
                     show_from_arrow[0],
                     lowest_hint_background=lowest_hint_background,
+                    is_aux_race=race.is_auxilliary_race
                 ),
             )
             self._lineset = BracketLineSetBye(
@@ -1264,6 +1287,7 @@ class RaceDrawing:
                 show_from_arrow=ShowFromArrow.HIDE,
                 override_type_editable=True,
                 lowest_hint_background=lowest_hint_background,
+                is_aux_race=race.is_auxilliary_race
             )
             right_side += LABEL_WIDTH
 

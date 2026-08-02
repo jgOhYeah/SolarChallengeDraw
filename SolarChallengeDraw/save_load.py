@@ -161,8 +161,11 @@ class CarCSVLoader(Loader):
             Car.from_dict(cast(Dict[str, Any], dt))
             for dt in car_df.to_dict(orient="records")
         ]
+
+        aux_races = 2**(int(np.ceil(np.log2(len(self._cars))))-1) + 2
+
         self._knockout = KnockoutEvent.new_from_cars(
             cars=self.cars,
             name=os.path.basename(cast(str, self.filename)),
-            max_auxilliary_races=10, # TODO: Make this configurrable.
+            max_auxilliary_races=aux_races,
         )

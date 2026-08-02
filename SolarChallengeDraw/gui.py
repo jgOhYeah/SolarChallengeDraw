@@ -22,6 +22,7 @@ from knockout_sheet_elements import (
 from knockout_sheet import KnockoutSheet
 from file_picker import FilePicker
 from save_load import CarCSVLoader, JSONLoader, Loader
+import solarcardrawtheme_theme
 
 PAD_FULL = 10
 PAD_HALF = 5
@@ -118,10 +119,14 @@ class KnockoutTab(AppTab):
         self._gui_sheet = KnockoutSheet(self._frame, 1, 0)
         self._print_sheet = KnockoutSheet(self._frame, None, None)
 
-    def draw_event(self, event: KnockoutEvent, cars: List[Car]) -> None:
+    def draw_event(self, event: KnockoutEvent, show_seed: bool) -> None:
         """Draws the event on screen and in the print canvas."""
-        self._gui_sheet.draw_canvas(event, InteractiveNumberBoxFactory())
-        self._print_sheet.draw_canvas(event, PrintNumberBoxFactory())
+        self._gui_sheet.draw_canvas(
+            event, InteractiveNumberBoxFactory(), show_seed=show_seed
+        )
+        self._print_sheet.draw_canvas(
+            event, PrintNumberBoxFactory(), show_seed=show_seed
+        )
         self._set_enable(True)
         self._select_me()
 
@@ -167,8 +172,13 @@ class Gui:
         ghostscript_path: str,
         initial_csv: str | None,
         initial_json: str | None,
+        show_seed: bool,
     ) -> None:
-        self._root = ttk.Window(title="Solar car draw generator", themename="cosmo")
+        self._show_seed = show_seed
+        self._root = ttk.Window(title="Solar car draw generator")
+        style = self._root.style
+        style.register_theme(solarcardrawtheme_theme.theme)
+        style.theme_use("solarcardrawtheme")
         self.json_path = FilePicker(
             default_extension=".json",
             filetypes=(("JSON docs", "*.json"),),
@@ -221,7 +231,7 @@ class Gui:
 
     def load_and_draw(self, loader: Loader) -> None:
         self.loaded = True
-        self.knockout.draw_event(loader.knockout, loader.cars)
+        self.knockout.draw_event(event=loader.knockout, show_seed=self._show_seed)
         self._json_loader.copy_from(loader)
 
     def save_event(self, _) -> None:
@@ -244,4 +254,3 @@ class Gui:
 
     def run(self) -> None:
         self._root.mainloop()
-        # pass

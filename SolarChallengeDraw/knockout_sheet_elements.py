@@ -38,24 +38,40 @@ FONT_SMALL_SIZE = 7
 FONT_NORMAL_SIZE = 10
 FONT_TITLE_SIZE = 15
 FONT_SUPTITLE_SIZE = 30
-HORIZONTAL_LINE_LENGTH = 20
+FONT_BOLD = "bold"
 LABEL_WIDTH = 100
 LABEL_HEIGHT = 30
 SHORT_TEXT_MARGIN = TEXT_MARGIN / 2
-WINNERS_INITIAL_SPACING = 55
-LOSERS_INITIAL_SPACING = 80
+WINNERS_INITIAL_SPACING = 65
+LOSERS_INITIAL_SPACING = 85
 TEXT_LINE_HEIGHT = 12
 HINT_ARROW_HEIGHT = 15
 HINT_ARROW_WIDTH = 20
 EVENT_ORDER_ARROW_THICKNESS = 15
-EVENT_ORDER_ARROW_COLOUR = "#007d08"
+EVENT_ORDER_ARROW_COLOUR = "#00804b"
+EVENT_ORDER_ARROW_BOTTOM_MARGIN = 50
 BRACKET_VERTICAL_SEPARATION = 50
 BRACKET_LINE_THICKNESS = 2
 FIRST_COLUMN_HINT_WIDTH = LABEL_WIDTH + 50
-COLUMN_WIDTH = LABEL_WIDTH + 2 * TEXT_MARGIN + 2 * HORIZONTAL_LINE_LENGTH
-AUX_RACES_SECTION_WIDTH = (
-    COLUMN_WIDTH + LABEL_WIDTH + 2 * TEXT_MARGIN + HINT_ARROW_WIDTH
-)
+
+
+class RaceStyle:
+    BASE_HLINE_LENGTH = 20
+    BASE_COLUMN_WIDTH = LABEL_WIDTH + 2 * TEXT_MARGIN
+
+    def __init__(self, first_round_races: int) -> None:
+        self._first_round_races = first_round_races
+
+    @property
+    def horizontal_line_length(self) -> float:
+        if self._first_round_races > 8:
+            return 3 * self.BASE_HLINE_LENGTH
+        else:
+            return self.BASE_HLINE_LENGTH
+
+    @property
+    def column_width(self) -> float:
+        return self.BASE_COLUMN_WIDTH + 2 * self.horizontal_line_length
 
 
 class NumberBox(ABC):
@@ -84,6 +100,12 @@ class NumberBox(ABC):
         self._sheet = sheet
         self._override_type_editable = override_type_editable
         self._draw(x, y)
+
+    @property
+    @abstractmethod
+    def lowest_tag(self) -> int:
+        """Returns the lowest tag to place items behind."""
+        pass
 
     @abstractmethod
     def _draw(self, x: float, y: float) -> None:
@@ -210,6 +232,11 @@ class InteractiveNumberBox(NumberBox):
             else ttkc.DISABLED
         )
 
+    @property
+    def lowest_tag(self) -> int:
+        """Returns the lowest tag to place items behind."""
+        return self._window
+
     def _draw(self, x: float, y: float) -> None:
         # Show a combobox (may need to be non-editable).
 
@@ -265,7 +292,7 @@ class InteractiveNumberBox(NumberBox):
         current_var.trace_add("write", on_write)
 
         self.update()
-        self._sheet.canvas.create_window(
+        self._window = self._sheet.canvas.create_window(
             x,
             y,
             anchor=ttkc.W,
@@ -286,6 +313,11 @@ class InteractiveNumberBox(NumberBox):
 
 class PrintNumberBox(NumberBox):
     """Class that draws a box around a number that can be printed but is not editable."""
+
+    @property
+    def lowest_tag(self) -> int:
+        """Returns the lowest tag to place items behind."""
+        return self._rectangle
 
     def _draw(self, x: float, y: float) -> None:
         self._rectangle = self._sheet.canvas.create_rectangle(
@@ -310,13 +342,18 @@ class PrintNumberBox(NumberBox):
 
 
 class InitialNumberBox(NumberBox):
+    @property
+    def lowest_tag(self) -> int:
+        """Returns the lowest tag to place items behind."""
+        return self._background
+
     def _draw(self, x: float, y: float) -> None:
         assert (
             self._race_branch is not None and self._race_branch.car is not None
         ), "The initial number box cannot cope with no RaceBranch provided or None car ID currently."
         # Show the numbers as not a dropdown at all.
         self._line1 = self._sheet.canvas.create_text(
-            x + LABEL_WIDTH,
+            x + LABEL_WIDTH - SHORT_TEXT_MARGIN,
             y - TEXT_LINE_HEIGHT / 2,
             anchor=ttkc.E,
             width=LABEL_WIDTH,
@@ -324,13 +361,24 @@ class InitialNumberBox(NumberBox):
             font=(FONT, FONT_NORMAL_SIZE),
         )
         self._line2 = self._sheet.canvas.create_text(
-            x + LABEL_WIDTH,
+            x + LABEL_WIDTH - SHORT_TEXT_MARGIN,
             y + TEXT_LINE_HEIGHT / 2,
             anchor=ttkc.E,
             width=LABEL_WIDTH,
             text=self._line2_text(),
             font=(FONT, FONT_SMALL_SIZE, "italic"),
         )
+
+        # Background.
+        self._background = self._sheet.canvas.create_rectangle(
+            x,
+            y - LABEL_HEIGHT / 2,
+            x + LABEL_WIDTH,
+            y + LABEL_HEIGHT / 2,
+            fill="#ffffff",
+            # outline=""
+        )
+        self._sheet.canvas.tag_lower(self._background, self._line1)
 
     def _line1_text(self) -> str:
         assert (
@@ -506,9 +554,10 @@ class BracketLineSetNormal(BracketLineSet):
         y_centre: float,
         race_branches: Tuple[RaceBranch, RaceBranch],
         y_separation: float,
+        horizontal_line_width: float,
     ) -> None:
         # Line from the right side of the bracket to the end.
-        tee_x = x_end - HORIZONTAL_LINE_LENGTH
+        tee_x = x_end - horizontal_line_width
 
         # Top lines
         top_y = y_centre - y_separation / 2
@@ -592,7 +641,7 @@ class NotesBox:
 
     def add_text(
         self, text: str, font: tuple | None = None, bullet_point: bool = False
-    ) -> None:
+    ) -> int:
         """Adds text to the notes box.
 
         Args:
@@ -623,17 +672,17 @@ class NotesBox:
             )
 
         # Draw the text.
-        _, _, _, bottom = self._canvas.bbox(
-            self._canvas.create_text(
-                left,
-                self.y_pos,
-                anchor=ttkc.NW,
-                font=font,
-                text=text,
-                width=text_width,
-            )
+        handle = self._canvas.create_text(
+            left,
+            self.y_pos,
+            anchor=ttkc.NW,
+            font=font,
+            text=text,
+            width=text_width,
         )
+        _, _, _, bottom = self._canvas.bbox(handle)
         self.y_pos = bottom
+        return handle
 
     def process_markdown_line(self, line: str) -> None:
         """Very basic formatter for extremely limited markdown."""
@@ -674,10 +723,13 @@ class HintArrow(ABC):
         sheet: KnockoutSheet,
         text_handle: int,
         direction: Literal["to"] | Literal["from"],
+        lowest_background_handle: int | None,
     ) -> None:
         self._sheet = sheet
         self._text_handle = text_handle
         self._direction = direction
+        self._lowest_background_handle = lowest_background_handle
+        self._text_box()
 
     @abstractmethod
     def update(self) -> None:
@@ -694,6 +746,33 @@ class HintArrow(ABC):
                 # Unkown, generic competitor.
                 return "Competitor"
 
+    def _text_box(self) -> None:
+        text_x0, text_y0, text_x1, text_y1 = self._sheet.canvas.bbox(self._text_handle)
+        self._text_background = self._sheet.canvas.create_rectangle(
+            text_x0 - SHORT_TEXT_MARGIN,
+            text_y0 - SHORT_TEXT_MARGIN,
+            text_x1 + SHORT_TEXT_MARGIN,
+            text_y1 + SHORT_TEXT_MARGIN,
+            fill="#ffffff",
+            outline="",
+        )
+        self._sheet.canvas.tag_lower(self._text_background, self._text_handle)
+        if self._lowest_background_handle is not None:
+            self._sheet.canvas.tag_lower(
+                self._text_background, self._lowest_background_handle
+            )
+
+    def _update_text(self, new_text: str) -> None:
+        self._sheet.canvas.itemconfigure(self._text_handle, text=new_text)
+        text_x0, text_y0, text_x1, text_y1 = self._sheet.canvas.bbox(self._text_handle)
+        self._sheet.canvas.coords(
+            self._text_background,
+            text_x0 - SHORT_TEXT_MARGIN,
+            text_y0 - SHORT_TEXT_MARGIN,
+            text_x1 + SHORT_TEXT_MARGIN,
+            text_y1 + SHORT_TEXT_MARGIN,
+        )
+
 
 class HintToArrow(HintArrow):
     """Class for a hint to arrow."""
@@ -705,6 +784,7 @@ class HintToArrow(HintArrow):
         x: float,
         y: float,
         result: BranchResult,
+        lowest_background_handle: int | None,
         flip: Literal[-1] | Literal[1] = 1,
     ) -> None:
         """Draws an arrow to show where to proceed from a race."""
@@ -725,7 +805,9 @@ class HintToArrow(HintArrow):
             anchor=ttkc.W,
             font=(FONT, FONT_SMALL_SIZE),
         )
-        super().__init__(sheet, text_handle, "to")
+        super().__init__(
+            sheet, text_handle, "to", lowest_background_handle=lowest_background_handle
+        )
         self._result = result
         self._current_race = current_race
         self.update()
@@ -751,9 +833,8 @@ class HintToArrow(HintArrow):
         if next_race is not None:
             # This arrow has something to point to.
             next_branch = next_race.get_single_branch(self._current_race)
-            self._sheet.canvas.itemconfigure(
-                self._text_handle,
-                text=self._text(
+            self._update_text(
+                self._text(
                     fill_probability=next_branch.fill_probability(
                         include_self_filled=False
                     ),
@@ -764,13 +845,11 @@ class HintToArrow(HintArrow):
                     all_options_present=self._current_race.branches_filled(),
                     race_name=next_race.name(),
                     aux_race=next_race.is_auxilliary_race,
-                ),
+                )
             )
         else:
             # This arrow has nowhere to point to.
-            self._sheet.canvas.itemconfigure(
-                self._text_handle, text="Race currently unused"
-            )
+            self._update_text("Race currently unused")
 
     def _text(
         self,
@@ -827,6 +906,7 @@ class HintFromArrow(HintArrow):
         race_branch: RaceBranch | None,
         x: float,
         y: float,
+        lowest_background_handle: int | None,
     ) -> None:
         """Draws and arrow to show which race a competitor is coming from.
 
@@ -838,7 +918,7 @@ class HintFromArrow(HintArrow):
         """
         text_handle = self._draw(sheet, x, y)
         self._race_branch = race_branch
-        super().__init__(sheet, text_handle, "from")
+        super().__init__(sheet, text_handle, "from", lowest_background_handle)
         self.update()
 
     def _draw(self, sheet: KnockoutSheet, x: float, y: float) -> int:
@@ -874,20 +954,19 @@ class HintFromArrow(HintArrow):
             dnr_expected = (
                 self._race_branch.fill_probability(True) <= FillProbability.UNLIKELY
             )
-            self._sheet.canvas.itemconfigure(
-                self._text_handle,
-                text=self._text(
+            self._update_text(
+                self._text(
                     decided=self._race_branch.prev_race.is_result_decided()
                     or self._race_branch.fill_probability(True)
                     == FillProbability.IMPOSSIBLE,
                     result=self._race_branch.branch_result(),
                     race_name=self._race_branch.prev_race.name(),
                     dnr=dnr_expected,
-                ),
+                )
             )
         else:
             # Not enough information provided. Put a blank message in.
-            self._sheet.canvas.itemconfigure(self._text_handle, text="Currently empty")
+            self._update_text("Currently empty")
 
     def _text(
         self,
@@ -972,12 +1051,18 @@ class RaceDrawing:
         self._winner_to: HintToArrow | None = None
         self._loser_to: HintToArrow | None = None
 
+    @property
+    def lowest_tag(self) -> int:
+        """Returns the lowest tag to place items behind."""
+        return self._number_boxes[0][0].lowest_tag
+
     def draw_number(
         self,
         x: float,
         y: float,
         race_branch: RaceBranch | None,
         show_from_arrow: ShowFromArrow,
+        lowest_hint_background: int | None,
         override_type_editable: bool = False,
     ) -> Tuple[NumberBox, HintFromArrow | None]:
         """Draws a numbers box at the specified position.
@@ -1007,9 +1092,13 @@ class RaceDrawing:
         from_arrow: HintFromArrow | None = None
         match show_from_arrow:
             case ShowFromArrow.TO_EAST:
-                from_arrow = HintFromArrow(self._sheet, race_branch, x, y)
+                from_arrow = HintFromArrow(
+                    self._sheet, race_branch, x, y, lowest_hint_background
+                )
             case ShowFromArrow.TO_NORTH:
-                from_arrow = HintFromAboveArrow(self._sheet, race_branch, x, y)
+                from_arrow = HintFromAboveArrow(
+                    self._sheet, race_branch, x, y, lowest_hint_background
+                )
             case ShowFromArrow.HIDE:
                 pass
             case _:
@@ -1039,6 +1128,8 @@ class RaceDrawing:
         show_from_arrow: Tuple[ShowFromArrow, ShowFromArrow] | Tuple[ShowFromArrow],
         show_winner_label: bool,
         show_loser_label: bool,
+        style: RaceStyle,
+        lowest_hint_background: int | None,
     ) -> float:
         """Draws a race.
 
@@ -1058,8 +1149,8 @@ class RaceDrawing:
         bracket_x_start = x + LABEL_WIDTH + TEXT_MARGIN
         bracket_x_end = (
             bracket_x_start
-            + 2 * HORIZONTAL_LINE_LENGTH
-            + (columns_wide - 1) * COLUMN_WIDTH
+            + 2 * style.horizontal_line_length
+            + (columns_wide - 1) * style.column_width
         )
 
         def draw_race_number(
@@ -1067,7 +1158,7 @@ class RaceDrawing:
         ) -> None:
             """Draws the race number."""
             self._sheet.canvas.create_text(
-                bracket_x_end - HORIZONTAL_LINE_LENGTH - SHORT_TEXT_MARGIN,
+                bracket_x_end - style.horizontal_line_length - SHORT_TEXT_MARGIN,
                 y_centre,
                 anchor=anchor,
                 text=race.name(),
@@ -1081,16 +1172,29 @@ class RaceDrawing:
                 len(show_from_arrow) == 2
             ), "The show_from_arrow tuple should be of length 2."
             self._number_boxes = (
-                self.draw_number(x, top_y, race.left_branch, show_from_arrow[0]),
-                self.draw_number(x, bottom_y, race.right_branch, show_from_arrow[1]),
+                self.draw_number(
+                    x,
+                    top_y,
+                    race.left_branch,
+                    show_from_arrow[0],
+                    lowest_hint_background=lowest_hint_background,
+                ),
+                self.draw_number(
+                    x,
+                    bottom_y,
+                    race.right_branch,
+                    show_from_arrow[1],
+                    lowest_hint_background=lowest_hint_background,
+                ),
             )
             self._lineset = BracketLineSetNormal(
-                self._sheet.canvas,
-                bracket_x_start,
-                bracket_x_end,
-                y_centre,
-                (race.left_branch, race.right_branch),
-                y_spacing,
+                canvas=self._sheet.canvas,
+                x_start=bracket_x_start,
+                x_end=bracket_x_end,
+                y_centre=y_centre,
+                race_branches=(race.left_branch, race.right_branch),
+                y_separation=y_spacing,
+                horizontal_line_width=style.horizontal_line_length,
             )
             draw_race_number(ttkc.E)
 
@@ -1101,7 +1205,11 @@ class RaceDrawing:
             ), "The show_from_arrow tuple should be at least of length 1. Only the first element is used."
             self._number_boxes = (
                 self.draw_number(
-                    x, y_centre, race.theoretical_winner(), show_from_arrow[0]
+                    x,
+                    y_centre,
+                    race.theoretical_winner(),
+                    show_from_arrow[0],
+                    lowest_hint_background=lowest_hint_background,
                 ),
             )
             self._lineset = BracketLineSetBye(
@@ -1119,20 +1227,26 @@ class RaceDrawing:
             draw_normal_race()
 
         # Arrows going from the race.
-        arrow_x = bracket_x_end - HORIZONTAL_LINE_LENGTH + TEXT_MARGIN
+        arrow_x = bracket_x_end - style.horizontal_line_length + TEXT_MARGIN
         if show_loser_label:
             self._loser_to = HintToArrow(
-                self._sheet, race, arrow_x, y_centre + TEXT_MARGIN, BranchResult.LOSER
+                sheet=self._sheet,
+                current_race=race,
+                x=arrow_x,
+                y=y_centre + TEXT_MARGIN,
+                result=BranchResult.LOSER,
+                lowest_background_handle=lowest_hint_background,
             )
 
         if show_winner_label:
             self._winner_to = HintToArrow(
-                self._sheet,
-                race,
-                arrow_x,
-                y_centre - TEXT_MARGIN,
-                BranchResult.WINNER,
-                -1,
+                sheet=self._sheet,
+                current_race=race,
+                x=arrow_x,
+                y=y_centre - TEXT_MARGIN,
+                result=BranchResult.WINNER,
+                lowest_background_handle=lowest_hint_background,
+                flip=-1,
             )
 
         right_side = bracket_x_end + TEXT_MARGIN
@@ -1149,6 +1263,7 @@ class RaceDrawing:
                 ),
                 show_from_arrow=ShowFromArrow.HIDE,
                 override_type_editable=True,
+                lowest_hint_background=lowest_hint_background,
             )
             right_side += LABEL_WIDTH
 
@@ -1216,6 +1331,7 @@ class AuxilliaryRaceSheet:
         numbers_factory: NumberBoxFactory,
         top_left: Tuple[float, float],
         bottom_right: Tuple[float, float],
+        style: RaceStyle,
     ) -> None:
         """Initialises the section for auxilliary races and draws them.
 
@@ -1230,7 +1346,9 @@ class AuxilliaryRaceSheet:
         self._box = NotesBox(
             canvas=sheet.canvas, top_left=top_left, bottom_right=bottom_right
         )
-        self._box.add_text("Auxilliary races", (FONT, FONT_TITLE_SIZE))
+        self._aux_title = self._box.add_text(
+            "Auxilliary races", (FONT, FONT_TITLE_SIZE)
+        )
         self._box.add_text(
             "Auxilliary races are only used if there is a DNR in a primary knockout race with two competitors."
         )
@@ -1256,6 +1374,8 @@ class AuxilliaryRaceSheet:
                 show_winner_label=True,
                 show_loser_label=False,
                 show_result_box=True,
+                style=style,
+                lowest_hint_background=self._aux_title,
             )
             self._box.y_pos += 2 * BRACKET_VERTICAL_SEPARATION + TEXT_MARGIN
 
@@ -1271,6 +1391,7 @@ class ArrowBetweenRounds:
     """Class for an arrow that gives a hint as to the order in which rounds should be run."""
 
     LINE_VERTICAL = 50
+    LINE_VERTICAL_FROM = 25
     LINE_HORIZONTAL = 35
 
     def __init__(
@@ -1289,8 +1410,8 @@ class ArrowBetweenRounds:
             halfway_x = (from_coords[0] + to_coords[0]) / 2
             path = [
                 from_coords,
-                (from_coords[0], from_coords[1] + self.LINE_VERTICAL),
-                (halfway_x, from_coords[1] + self.LINE_VERTICAL),
+                (from_coords[0], from_coords[1] + self.LINE_VERTICAL_FROM),
+                (halfway_x, from_coords[1] + self.LINE_VERTICAL_FROM),
                 (halfway_x, to_coords[1] - self.LINE_VERTICAL),
                 (to_coords[0], to_coords[1] - self.LINE_VERTICAL),
                 to_coords,
@@ -1332,7 +1453,7 @@ class EventStartArrow(ArrowBetweenRounds):
             from_coords[1],
             text="Event start",
             anchor=ttkc.E,
-            font=(FONT, FONT_NORMAL_SIZE),
+            font=(FONT, FONT_NORMAL_SIZE, FONT_BOLD),
             fill=EVENT_ORDER_ARROW_COLOUR,
         )
         text_x1, text_y1, text_x2, text_y2 = self._sheet.canvas.bbox(text_handle)

@@ -11,8 +11,6 @@ import ttkbootstrap as ttk
 import ttkbootstrap.constants as ttkc
 from tkinter import simpledialog
 from knockout_race import (
-    RaceBranch,
-    BranchResult,
     Podium,
     Race,
 )
@@ -22,18 +20,14 @@ from knockout import (
     RoundType,
 )
 from knockout_sheet_elements import (
-    HINT_ARROW_HEIGHT,
-    HINT_ARROW_WIDTH,
-    AUX_RACES_SECTION_WIDTH,
     BOTTOM_MARGIN,
     BRACKET_VERTICAL_SEPARATION,
     FIRST_COLUMN_HINT_WIDTH,
     FONT,
     FONT_NORMAL_SIZE,
-    FONT_SMALL_SIZE,
     FONT_SUPTITLE_SIZE,
     FONT_TITLE_SIZE,
-    HORIZONTAL_LINE_LENGTH,
+    FONT_BOLD,
     LABEL_HEIGHT,
     LABEL_WIDTH,
     LEFT_MARGIN,
@@ -43,18 +37,16 @@ from knockout_sheet_elements import (
     TEXT_MARGIN,
     TOP_MARGIN,
     WINNERS_INITIAL_SPACING,
+    EVENT_ORDER_ARROW_BOTTOM_MARGIN,
     ArrowBetweenRounds,
     AuxilliaryRaceSheet,
-    BracketLineSet,
-    BracketLineSetBye,
-    BracketLineSetNormal,
     EventStartArrow,
     NotesBox,
-    NumberBox,
     NumberBoxFactory,
     RaceDrawing,
-    COLUMN_WIDTH,
+    RaceStyle,
     ShowFromArrow,
+    HINT_ARROW_WIDTH,
 )
 
 
@@ -80,6 +72,9 @@ class KnockoutSheet:
         # Add to the screen.
         if start_row is not None and start_column is not None:
             self._setup_gui(start_row, start_column)
+
+        self._aux_sizing = RaceStyle(0)
+        self._normal_sizing = RaceStyle(0)
 
     def _setup_gui(self, start_row: int, start_column: int) -> None:
         """Sets up the canvas and adds scrolling.
@@ -144,6 +139,15 @@ class KnockoutSheet:
         self._frame.grid_rowconfigure(start_row, weight=1)
         self._frame.grid_columnconfigure(start_column, weight=1)
 
+    @property
+    def _aux_race_section_width(self) -> float:
+        return (
+            self._aux_sizing.column_width
+            + LABEL_WIDTH
+            + 2 * TEXT_MARGIN
+            + HINT_ARROW_WIDTH
+        )
+
     def draw_canvas(
         self, event: KnockoutEvent, numbers: NumberBoxFactory, show_seed: bool = True
     ) -> None:
@@ -153,12 +157,13 @@ class KnockoutSheet:
             event (KnockoutEvent): The event to plot.
         """
         self._clear()
+        self._normal_sizing = RaceStyle(len(event.winners_bracket[0]))
         suptitle_bottom = self.draw_title(event)
         self.draw_tree(
             event=event,
             numbers=numbers,
             show_seed=show_seed,
-            x_offset=AUX_RACES_SECTION_WIDTH + LEFT_MARGIN + TEXT_MARGIN,
+            x_offset=self._aux_race_section_width + LEFT_MARGIN + TEXT_MARGIN,
             y_offset=suptitle_bottom + 45,
         )
         self.draw_notes(event, self._width - RIGHT_MARGIN, self._height - BOTTOM_MARGIN)
@@ -178,11 +183,16 @@ class KnockoutSheet:
     ) -> None:
         top_left = (LEFT_MARGIN, y_offset)
         bottom_right = (
-            LEFT_MARGIN + AUX_RACES_SECTION_WIDTH,
+            LEFT_MARGIN + self._aux_race_section_width,
             self._height - BOTTOM_MARGIN,
         )
         self._aux_races = AuxilliaryRaceSheet(
-            self, event, numbers, top_left, bottom_right
+            sheet=self,
+            event=event,
+            numbers_factory=numbers,
+            top_left=top_left,
+            bottom_right=bottom_right,
+            style=self._aux_sizing
         )
 
     def draw_title(
@@ -191,7 +201,7 @@ class KnockoutSheet:
     ) -> float:
         """Draws the main title."""
         NORMAL_TITLE_FONT = (FONT, FONT_SUPTITLE_SIZE)
-        HOVER_TITLE_FONT = (FONT, FONT_SUPTITLE_SIZE, "bold")
+        HOVER_TITLE_FONT = (FONT, FONT_SUPTITLE_SIZE, FONT_BOLD)
         # Titles
         text_id = self.canvas.create_text(
             LEFT_MARGIN,
@@ -271,10 +281,14 @@ class KnockoutSheet:
             """
             # Draw the box and title.
             BOX_PADDING = 20
-            BOX_FILL = "#CFF9F3"
-            TEXT_FILL = "#1E7B6D"
-            box_centre = x_end - HORIZONTAL_LINE_LENGTH - TEXT_MARGIN
-            box_half_width = HORIZONTAL_LINE_LENGTH + TEXT_MARGIN + BOX_PADDING
+            BOX_FILL = "#eeeeee"
+            TEXT_FILL = "#00804b"
+            box_centre = (
+                x_end - self._normal_sizing.horizontal_line_length - TEXT_MARGIN
+            )
+            box_half_width = (
+                self._normal_sizing.horizontal_line_length + TEXT_MARGIN + BOX_PADDING
+            )
             next_round_top = y_centre - next_round_height / 2 - next_round_offset
             preferred_text_location = y_centre - (height / 2) - offset
             text_y_bottom = min(next_round_top, preferred_text_location) - TEXT_MARGIN
@@ -286,7 +300,7 @@ class KnockoutSheet:
                     anchor=ttkc.S,
                     text=round_name,
                     width=2 * box_half_width - 2 * TEXT_MARGIN,
-                    font=(FONT, FONT_NORMAL_SIZE, "bold"),
+                    font=(FONT, FONT_NORMAL_SIZE, FONT_BOLD),
                     fill=TEXT_FILL,
                 )
             )
@@ -303,7 +317,11 @@ class KnockoutSheet:
             )
             self.canvas.tag_lower(rect)
 
-            return box_centre, box_top - SHORT_TEXT_MARGIN, box_bottom + SHORT_TEXT_MARGIN
+            return (
+                box_centre,
+                box_top - SHORT_TEXT_MARGIN,
+                box_bottom + SHORT_TEXT_MARGIN,
+            )
 
         def draw_round(
             x: float,
@@ -351,6 +369,8 @@ class KnockoutSheet:
                     or isinstance(race.winner_next_race, Podium),
                     show_loser_label=show_loser_label
                     or isinstance(race.loser_next_race, Podium),
+                    style=self._normal_sizing,
+                    lowest_hint_background=self._races[0].lowest_tag if len(self._races) > 1 else None
                 )
 
             return x_end
@@ -414,7 +434,11 @@ class KnockoutSheet:
                     )
                 )
 
-            return x + len(rounds) * COLUMN_WIDTH, y_centre, event_arrow_attachment
+            return (
+                x + len(rounds) * self._normal_sizing.column_width,
+                y_centre,
+                event_arrow_attachment,
+            )
 
         def draw_losers_bracket(
             x: float,
@@ -499,7 +523,7 @@ class KnockoutSheet:
                 )
 
             return (
-                x + len(rounds) * COLUMN_WIDTH,
+                x + len(rounds) * self._normal_sizing.column_width,
                 y_centre - y_offset(len(rounds)),
                 event_arrow_attachment,
             )
@@ -616,7 +640,11 @@ class KnockoutSheet:
         # Scaling, width and height.
         drawing_width += RIGHT_MARGIN
         drawing_height = (
-            losers_centreline + losers_height / 2 + LABEL_HEIGHT + BOTTOM_MARGIN
+            losers_centreline
+            + losers_height / 2
+            + LABEL_HEIGHT
+            + BOTTOM_MARGIN
+            + EVENT_ORDER_ARROW_BOTTOM_MARGIN
         )
         self.set_size(self.a_paper_scale((drawing_width, drawing_height)))
         # self.manual_update()
@@ -667,7 +695,7 @@ class KnockoutSheet:
             from_coords = get_coord_set(round_from, True)
             to_coords = get_coord_set(round_to, False)
             ArrowBetweenRounds(self, from_coords, to_coords)
-        
+
         # Event start message.
         EventStartArrow(self, get_coord_set(order[0], False))
 

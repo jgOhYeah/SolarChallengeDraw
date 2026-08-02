@@ -12,6 +12,7 @@ options:
 
 Written by Jotham Gates, 2025.
 """
+
 import argparse
 import platform
 import gui
@@ -41,6 +42,12 @@ def get_arguments() -> argparse.Namespace:
         "--ghostscript",
         default=None,
         help="The name / path to the Ghostscript installation. This is required for exporting PDFs. On Linux and macOS this defaults to `gs`. On Windows this defaults to `gswin64c.exe`.",
+    )
+    parser.add_argument(
+        "-s",
+        "--show-seeds",
+        action="store_true",
+        help="If provided, shows the predicted seed position for each race entrant.",
     )
     return parser.parse_args()
 
@@ -72,12 +79,10 @@ def ghostscript_location(provided: str | None) -> str:
 
 if __name__ == "__main__":
     args = get_arguments()
-    # cars = car.load_cars(args.cars)
-    # car_loader = CarCSVLoader(args.cars)
-    # car_loader.load()
-    # cars = car_loader.cars
-    # knockout_event = knockout.KnockoutEvent(cars, "Test event", 10)
-    # knockout_event.print()
-    gui_ui = gui.Gui(ghostscript_location(args.ghostscript), args.cars, args.json)
-    # gui_ui.knockout.draw_event(knockout_event, cars)
+    gui_ui = gui.Gui(
+        ghostscript_path=ghostscript_location(provided=args.ghostscript),
+        initial_csv=args.cars,
+        initial_json=args.json,
+        show_seed=args.show_seeds,
+    )
     gui_ui.run()

@@ -3,11 +3,12 @@ Represents each race in a knockout competition.
 Written by Jotham Gates, 29/11/2025"""
 
 from __future__ import annotations
-from abc import ABC, abstractproperty
+from abc import ABC
 from dataclasses import dataclass
 from enum import Enum, IntEnum, StrEnum, auto
 from typing import Any, Dict, Iterable, List, Literal, Tuple, cast, TYPE_CHECKING
 import numpy as np
+from numpy.lib._arraysetops_impl import UniqueCountsResult
 from car import Car
 from abc import ABC, abstractmethod
 
@@ -395,6 +396,7 @@ class Race(Winnable):
         loser_next_race: Race | Podium | None = None,
         is_auxilliary_race: bool = False,
         race_number: int = 0,
+        number_heats: int = 1
     ):
         self.left_branch = left_branch
         self.right_branch = right_branch
@@ -402,6 +404,10 @@ class Race(Winnable):
         self.loser_next_race: Race | Podium | None = loser_next_race
         self.race_number: int = race_number
         self._is_auxilliary_race = is_auxilliary_race
+
+        # Race heats.
+        assert number_heats % 2 and number_heats >= 1, "The number of heats (Best of races) should be odd and >= 1."
+        self._heats: List[int] = [self.WINNER_EMPTY]*number_heats
 
     def theoretical_winner(self) -> RaceBranch:
         """Calculates the theoretical winner based on seeding.
@@ -464,8 +470,8 @@ class Race(Winnable):
             or self.right_branch.branch_type == BranchType.FIXED
         )
 
-    WINNER_EMPTY = -1
-    WINNER_DNR = -2
+    WINNER_EMPTY = -1 # Represents no winner filled in for the current race (use in place of a car number).
+    WINNER_DNR = -2 # Represents that all competitors failed to run in the current race (use in place of a car number).
 
     def get_options(self) -> List[Car]:
         """Returns a list of options that may win the race.
@@ -486,7 +492,38 @@ class Race(Winnable):
             # No competitors.
             return []
 
-    def set_winner(
+    @property
+    def heat_counts(self) -> int:
+        return len(self._heats)
+
+    def _get_options_ids(self) -> List[int]:
+        """Returns a list of car ids as option to win this race, including DNR and EMPTY."""
+        return [i.car_id for i in self.get_options()] + [self.WINNER_DNR, self.WINNER_EMPTY]
+    
+    def set_winner(self, heat:int, car_number: int, auxilliary_manager: AuxilliaryRaceManager) -> None:
+        assert heat >= 0 and heat < len(self._heats), "Invalid heat number."
+        assert car_number in self._get_options_ids(), "Invalid winning car ID provided."
+        self._heats[heat] = car_number
+        self._tally_heats(auxilliary_manager=auxilliary_manager)
+
+    def _tally_heats(self, auxilliary_manager: AuxilliaryRaceManager) -> None:
+        """Tallies up the number of heats that have been run and calls _set_overall_winner() to propagate the overall winner onward.
+        """
+        # Count up the number of wins for each.
+        win_counts = {}.fromkeys(self._get_options_ids(), 0)
+        for heat, result in enumerate(self._heats):
+            win_counts[result] += 1
+
+        # Check the most common two occurances. If the most common is has a different number to the second most common, then this is a valid outcome of the heats (includes DNR and empty). Otherwise treat as empty.
+        most_common = sorted(win_counts.items(), key=lambda pair: pair[1], reverse=True)
+        if most_common[0][1] != most_common[1][1] and most_common[0][1] > len(self._heats) / 2:
+            # We have a valid outcome / empty.
+            self._set_overall_winner(most_common[0][0], auxilliary_manager=auxilliary_manager)
+        else:
+            # Not valid as we have multiple of the same count or not enough.
+            self._set_overall_winner(self.WINNER_EMPTY, auxilliary_manager=auxilliary_manager)
+
+    def _set_overall_winner(
         self, car_number: int, auxilliary_manager: AuxilliaryRaceManager
     ) -> None:
         """Sets the winner of the race.
@@ -495,7 +532,6 @@ class Race(Winnable):
             car_number (int): The number of the car that won the race.
 
         Raises:
-            NotImplementedError: If the race was a DNR (TODO).
             ValueError: If the car number is not part of the race.
         """
 
@@ -642,8 +678,7 @@ class Race(Winnable):
             self.Fields.RIGHT_BRANCH: self.right_branch.to_dict(),
             self.Fields.WINNER_NEXT_RACE: name_or_none(self.winner_next_race),
             self.Fields.LOSER_NEXT_RACE: name_or_none(self.loser_next_race),
-        } | super().to_dict()
-
+        } | super().to_dict()        
 
 class Loading(ABC):
     """A base class for objects that can be loaded from a dictionary and need placeholder references replaced once everything is created."""

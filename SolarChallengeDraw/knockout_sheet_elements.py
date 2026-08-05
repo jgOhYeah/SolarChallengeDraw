@@ -41,6 +41,7 @@ FONT_SUPTITLE_SIZE = 30
 FONT_BOLD = "bold"
 LABEL_WIDTH = 100
 LABEL_HEIGHT = 30
+HEAT_Y_SPACING = 40
 SHORT_TEXT_MARGIN = TEXT_MARGIN / 2
 WINNERS_INITIAL_SPACING = 65
 LOSERS_INITIAL_SPACING = 85
@@ -85,7 +86,8 @@ class NumberBox(ABC):
         aux_race_manager: AuxilliaryRaceManager,
         sheet: KnockoutSheet,
         override_type_editable: bool,
-        is_aux_race: bool
+        is_aux_race: bool,
+        heat: int
     ) -> None:
         """Initialises the number box.
 
@@ -101,12 +103,16 @@ class NumberBox(ABC):
             is_aux_race (bool): True when this number box is part of an
                                 auxilliary race. This changes text that is shown
                                 when impossible to fill.
+            heat (int): The heat number this box represents.
         """
         self._race_branch = race_branch
         self._aux_race_manager = aux_race_manager
         self._sheet = sheet
         self._override_type_editable = override_type_editable
         self._is_aux_race = is_aux_race
+
+        assert (heat == 0 and (self._race_branch is None or self._race_branch.prev_race is None)) or (self._race_branch is not None and self._race_branch.prev_race is not None and heat >= 0 and heat < self._race_branch.prev_race.heat_counts), "Invalid heat number provided."
+        self._heat = heat
         self._draw(x, y)
 
     @property
@@ -211,7 +217,8 @@ class InteractiveNumberBox(NumberBox):
         aux_race_manager: AuxilliaryRaceManager,
         sheet: KnockoutSheet,
         override_type_editable: bool,
-        is_aux_race: bool
+        is_aux_race: bool,
+        heat: int
     ) -> None:
         """Initialises the number box.
 
@@ -228,7 +235,7 @@ class InteractiveNumberBox(NumberBox):
                 BranchType.DEPENDENT_EDITABLE. Defaults to False.
         """
         super().__init__(
-            x, y, race_branch, aux_race_manager, sheet, override_type_editable, is_aux_race=is_aux_race
+            x, y, race_branch, aux_race_manager, sheet, override_type_editable, is_aux_race=is_aux_race, heat=heat
         )
         self._in_update = False  # Signals if a change to the combobox should be ignored (somewhat like a semaphore).
 
@@ -273,16 +280,16 @@ class InteractiveNumberBox(NumberBox):
                 match selected:
                     case self.StrFixedOptions.EMPTY:
                         self._race_branch.prev_race.set_winner(
-                            Race.WINNER_EMPTY, self._aux_race_manager
+                            self._heat, Race.WINNER_EMPTY, self._aux_race_manager
                         )
                     case self.StrFixedOptions.DNR:
                         self._race_branch.prev_race.set_winner(
-                            Race.WINNER_DNR, self._aux_race_manager
+                            self._heat, Race.WINNER_DNR, self._aux_race_manager
                         )
                     case _:
                         number = int(selected)
                         self._race_branch.prev_race.set_winner(
-                            number, self._aux_race_manager
+                            self._heat, number, self._aux_race_manager
                         )
 
                 self._sheet.update()
@@ -421,8 +428,9 @@ class NumberBoxFactory(ABC):
         race_branch: RaceBranch | None,
         aux_race_manager: AuxilliaryRaceManager,
         sheet: KnockoutSheet,
-        override_type_editable: bool = False,
-        is_aux_race: bool = False
+        override_type_editable: bool,
+        is_aux_race: bool,
+        heat: int
     ) -> NumberBox:
         pass
 
@@ -433,16 +441,17 @@ class NumberBoxFactory(ABC):
         race_branch: RaceBranch | None,
         aux_race_manager: AuxilliaryRaceManager,
         sheet: KnockoutSheet,
-        override_type_editable: bool = False,
-        is_aux_race: bool = False
+        override_type_editable: bool,
+        is_aux_race: bool,
+        heat: int,
     ) -> NumberBox:
         if race_branch is None or race_branch.branch_type != BranchType.FIXED:
             return self._create_not_fixed(
-                x, y, race_branch, aux_race_manager, sheet, override_type_editable, is_aux_race=is_aux_race
+                x, y, race_branch, aux_race_manager, sheet, override_type_editable, is_aux_race=is_aux_race, heat=heat
             )
         else:
             return InitialNumberBox(
-                x, y, race_branch, aux_race_manager, sheet, override_type_editable, is_aux_race=is_aux_race
+                x, y, race_branch, aux_race_manager, sheet, override_type_editable, is_aux_race=is_aux_race, heat=heat
             )
 
 
@@ -454,8 +463,9 @@ class InteractiveNumberBoxFactory(NumberBoxFactory):
         race_branch: RaceBranch | None,
         aux_race_manager: AuxilliaryRaceManager,
         sheet: KnockoutSheet,
-        override_type_editable: bool = False,
-        is_aux_race: bool = False
+        override_type_editable: bool,
+        is_aux_race: bool,
+        heat: int
     ) -> NumberBox:
         return InteractiveNumberBox(
             x=x,
@@ -464,7 +474,8 @@ class InteractiveNumberBoxFactory(NumberBoxFactory):
             aux_race_manager=aux_race_manager,
             sheet=sheet,
             override_type_editable=override_type_editable,
-            is_aux_race=is_aux_race
+            is_aux_race=is_aux_race,
+            heat=heat
         )
 
 
@@ -476,11 +487,12 @@ class PrintNumberBoxFactory(NumberBoxFactory):
         race_branch: RaceBranch | None,
         aux_race_manager: AuxilliaryRaceManager,
         sheet: KnockoutSheet,
-        override_type_editable: bool = False,
-        is_aux_race: bool = False
+        override_type_editable: bool,
+        is_aux_race: bool,
+        heat: int
     ) -> NumberBox:
         return PrintNumberBox(
-            x, y, race_branch, aux_race_manager, sheet, override_type_editable, is_aux_race=is_aux_race
+            x, y, race_branch, aux_race_manager, sheet, override_type_editable, is_aux_race=is_aux_race, heat=heat
         )
 
 
@@ -1061,9 +1073,9 @@ class RaceDrawing:
         self._event = event
         self._numbers_factory = numbers_factory
         self._show_seed = show_seed
-        self._number_boxes: Tuple[Tuple[NumberBox, HintFromArrow | None], ...]
+        self._number_boxes: Tuple[Tuple[List[NumberBox], HintFromArrow | None], ...]
         self._lineset: BracketLineSet
-        self._results_box: Tuple[NumberBox, HintFromArrow | None] | None = (
+        self._results_box: Tuple[List[NumberBox], HintFromArrow | None] | None = (
             None  # Only used if requested to show the results.
         )
         self._winner_to: HintToArrow | None = None
@@ -1072,7 +1084,7 @@ class RaceDrawing:
     @property
     def lowest_tag(self) -> int:
         """Returns the lowest tag to place items behind."""
-        return self._number_boxes[0][0].lowest_tag
+        return self._number_boxes[0][0][0].lowest_tag
 
     def draw_number(
         self,
@@ -1083,7 +1095,7 @@ class RaceDrawing:
         lowest_hint_background: int | None,
         override_type_editable: bool = False,
         is_aux_race: bool = False
-    ) -> Tuple[NumberBox, HintFromArrow | None]:
+    ) -> Tuple[List[NumberBox], HintFromArrow | None]:
         """Draws a numbers box at the specified position.
 
         Args:
@@ -1097,45 +1109,72 @@ class RaceDrawing:
         Returns:
             NumberBox: The created number box.
         """
-        # Draw the box for the number.
-        number_box = self._numbers_factory.create(
-            x=x,
-            y=y,
-            race_branch=race_branch,
-            aux_race_manager=self._event.auxilliary_races,
-            sheet=self._sheet,
-            override_type_editable=override_type_editable,
-            is_aux_race=is_aux_race
-        )
+        def box_offset(heat:int, heats:int) -> float:
+            """Calculates the vertical offset needed for a number box when there are multiple heats."""
+            total_height = (heats-1) * HEAT_Y_SPACING
+            return heat*HEAT_Y_SPACING - total_height/2
 
-        # Draw the from hint.
-        from_arrow: HintFromArrow | None = None
-        match show_from_arrow:
-            case ShowFromArrow.TO_EAST:
-                from_arrow = HintFromArrow(
-                    self._sheet, race_branch, x, y, lowest_hint_background
-                )
-            case ShowFromArrow.TO_NORTH:
-                from_arrow = HintFromAboveArrow(
-                    self._sheet, race_branch, x, y, lowest_hint_background
-                )
-            case ShowFromArrow.HIDE:
-                pass
-            case _:
-                raise NotImplementedError("The requested direction is not set.")
+        def draw_number_boxes() -> List[NumberBox]:
+            """Draws a set of number boxes, one per heat.
 
-        if race_branch is not None:
-            # Draw the seed.
-            if self._show_seed:
-                self._sheet.canvas.create_text(
-                    x + SHORT_TEXT_MARGIN,
-                    y,
-                    anchor=ttkc.W,
-                    text=race_branch.seed,
-                    fill="red",
-                )
+            Returns:
+                List[NumberBox]: Number boxes, each item corresponds to a heat (1 for single race, 3 for best of 3).
+            """
+            boxes: List[NumberBox] = []
+            if race_branch is not None and race_branch.prev_race is not None:
+                heats = race_branch.prev_race.heat_counts
+            else:
+                heats = 1
 
-        return number_box, from_arrow
+            for heat in range(heats):
+                # Draw the box for the number.
+                boxes.append(self._numbers_factory.create(
+                    x=x,
+                    y=y + box_offset(heat, heats),
+                    race_branch=race_branch,
+                    aux_race_manager=self._event.auxilliary_races,
+                    sheet=self._sheet,
+                    override_type_editable=override_type_editable,
+                    is_aux_race=is_aux_race,
+                    heat=heat
+                ))
+
+            return boxes
+
+        def draw_from_arrows() -> HintFromArrow | None:
+            # Draw the from hint.
+            from_arrow: HintFromArrow | None = None
+            match show_from_arrow:
+                case ShowFromArrow.TO_EAST:
+                    from_arrow = HintFromArrow(
+                        self._sheet, race_branch, x, y, lowest_hint_background
+                    )
+                case ShowFromArrow.TO_NORTH:
+                    from_arrow = HintFromAboveArrow(
+                        self._sheet, race_branch, x, y, lowest_hint_background
+                    )
+                case ShowFromArrow.HIDE:
+                    pass
+                case _:
+                    raise NotImplementedError("The requested direction is not set.")
+
+            return from_arrow
+
+        def draw_seed() -> None:
+            assert race_branch is not None, "Needs a race branch to show a seed."
+            self._sheet.canvas.create_text(
+                x + SHORT_TEXT_MARGIN,
+                y,
+                anchor=ttkc.W,
+                text=race_branch.seed,
+                fill="red",
+            )
+
+        if race_branch is not None and self._show_seed:
+            draw_seed()
+                
+
+        return draw_number_boxes(), draw_from_arrows()
 
     def draw_race(
         self,
@@ -1296,14 +1335,14 @@ class RaceDrawing:
 
     def assign_race(self, race: Race) -> None:
         """Assigns a new race to the race."""
-
         # Update the input boxes and lines.
         new_branches = race.get_branches()
         assert len(new_branches) == len(
             self._number_boxes
         ), "Currently the number of branches when updating must be the same."
-        for (number_box, arrow), branch in zip(self._number_boxes, new_branches):
-            number_box.set_race_branch(branch)
+        for (number_boxes, arrow), branch in zip(self._number_boxes, new_branches):
+            for n in number_boxes:
+                n.set_race_branch(branch)
             if arrow is not None:
                 arrow.set_branch(branch)
 
@@ -1318,21 +1357,24 @@ class RaceDrawing:
                 # We can't provide an actual branch.
                 branch = None
 
-            number_box, arrow = self._results_box
-            number_box.set_race_branch(branch)
+            number_boxes, arrow = self._results_box
+            for n in number_boxes:
+                n.set_race_branch(branch)
             if arrow is not None:
                 arrow.set_branch(branch)
 
     def update(self) -> None:
         """Updates the elements in the drawing of the race."""
-        for number_box, arrow in self._number_boxes:
-            number_box.update()
+        for number_boxes, arrow in self._number_boxes:
+            for n in number_boxes:
+                n.update()
             if arrow is not None:
                 arrow.update()
 
         if self._results_box is not None:
-            number_box, arrow = self._results_box
-            number_box.update()
+            number_boxes, arrow = self._results_box
+            for n in number_boxes:
+                n.update()
             if arrow is not None:
                 arrow.update()
 

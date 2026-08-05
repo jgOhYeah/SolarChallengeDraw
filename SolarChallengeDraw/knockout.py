@@ -228,7 +228,7 @@ def assign_cars(cars: List[Car], first_round: List[Race], reverse: bool = True) 
 
 
 def add_grand_final(
-    winners_final: Race, losers_final: Race, losers_final_repecharge: Race
+    winners_final: Race, losers_final: Race, losers_final_repecharge: Race, heats:int
 ) -> Tuple[Race, List[Podium]]:
     """Adds a grand final and sets the podium results from winning and loosing."""
     assert (
@@ -248,6 +248,7 @@ def add_grand_final(
         ),
         winner_next_race=podiums[0],
         loser_next_race=podiums[1],
+        number_heats=heats
     )
     cast(Podium, grand_final.winner_next_race).branch.prev_race = grand_final
     cast(Podium, grand_final.loser_next_race).branch.prev_race = grand_final
@@ -485,7 +486,7 @@ class KnockoutEvent:
 
     @classmethod
     def new_from_cars(
-        cls, cars: List[Car], name: str, max_auxilliary_races: int
+        cls, cars: List[Car], name: str, max_auxilliary_races: int, grand_final_heats:int
     ) -> KnockoutEvent:
         """Creates a new, relatively empty knockout event from a list of cars alone.
 
@@ -510,6 +511,7 @@ class KnockoutEvent:
             winners_bracket[-1][0],
             losers_bracket[-1][0],
             losers_bracket[-2][0],
+            heats=grand_final_heats
         )
         auxilliary_races = AuxilliaryRaceManager.create_empty(max_auxilliary_races)
         event = KnockoutEvent(

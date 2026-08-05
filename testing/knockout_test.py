@@ -217,8 +217,8 @@ class TestRace(unittest.TestCase):
             left_race.left_branch.car is not None
             and right_race.left_branch.car is not None
         ), "Initial competitors incorrect."
-        left_race.set_winner(left_race.left_branch.car.car_id, aux_race_manager)
-        right_race.set_winner(right_race.left_branch.car.car_id, aux_race_manager)
+        left_race._set_overall_winner(left_race.left_branch.car.car_id, aux_race_manager)
+        right_race._set_overall_winner(right_race.left_branch.car.car_id, aux_race_manager)
 
         # Now check if editable
         self.assertTrue(
@@ -245,7 +245,7 @@ class TestRace(unittest.TestCase):
 
         # Set competitors for one side of winner.
         assert left_race.left_branch.car is not None, "Testing error"
-        left_race.set_winner(left_race.left_branch.car.car_id, AuxilliaryRaceManager(1))
+        left_race._set_overall_winner(left_race.left_branch.car.car_id, AuxilliaryRaceManager(1))
 
         # Tests with a single competitor filled.
         self.assertFalse(
@@ -275,7 +275,7 @@ class TestRace(unittest.TestCase):
 
         # Fill the second competitor.
         assert right_race.left_branch.car is not None, "Testing error"
-        right_race.set_winner(
+        right_race._set_overall_winner(
             right_race.left_branch.car.car_id, AuxilliaryRaceManager(1)
         )
 
@@ -459,7 +459,7 @@ class TestEvent(unittest.TestCase):
         )
 
         # Mark a race as DNR.
-        prev_race.set_winner(Race.WINNER_DNR, event.auxilliary_races)
+        prev_race._set_overall_winner(Race.WINNER_DNR, event.auxilliary_races)
 
         # Check the auxilliary race has been created and points to the previous race.
         aux_race = event.auxilliary_races.races[0]
@@ -619,10 +619,10 @@ class TestSheet(unittest.TestCase):
 
         def update(round: RoundId, race: int, winner: int) -> None:
             """Updates both sheets and redraws the updated one."""
-            fresh_event.get_round(round)[race].set_winner(
+            fresh_event.get_round(round)[race]._set_overall_winner(
                 winner, fresh_event.auxilliary_races
             )
-            updated_event.get_round(round)[race].set_winner(
+            updated_event.get_round(round)[race]._set_overall_winner(
                 winner, updated_event.auxilliary_races
             )
             updated_sheet.update()

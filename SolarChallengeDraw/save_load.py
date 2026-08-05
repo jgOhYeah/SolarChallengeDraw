@@ -151,8 +151,10 @@ class CarCSVLoader(Loader):
         filename: str | None = None,
         cars: List[Car] | None = None,
         knockout: KnockoutEvent | None = None,
+        grand_final_heats: int = 3 # TODO:
     ) -> None:
         super().__init__(cars=cars, knockout=knockout, filename=filename)
+        self.grand_final_heats = grand_final_heats
 
     def load(self) -> None:
         self._check_filename()
@@ -168,4 +170,5 @@ class CarCSVLoader(Loader):
             cars=self.cars,
             name=os.path.basename(cast(str, self.filename)),
             max_auxilliary_races=aux_races,
+            grand_final_heats=self.grand_final_heats
         )

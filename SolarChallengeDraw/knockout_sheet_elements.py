@@ -87,7 +87,7 @@ class NumberBox(ABC):
         sheet: KnockoutSheet,
         override_type_editable: bool,
         is_aux_race: bool,
-        heat: int
+        heat: int,
     ) -> None:
         """Initialises the number box.
 
@@ -111,7 +111,15 @@ class NumberBox(ABC):
         self._override_type_editable = override_type_editable
         self._is_aux_race = is_aux_race
 
-        assert (heat == 0 and (self._race_branch is None or self._race_branch.prev_race is None)) or (self._race_branch is not None and self._race_branch.prev_race is not None and heat >= 0 and heat < self._race_branch.prev_race.heat_counts), "Invalid heat number provided."
+        assert (
+            heat == 0
+            and (self._race_branch is None or self._race_branch.prev_race is None)
+        ) or (
+            self._race_branch is not None
+            and self._race_branch.prev_race is not None
+            and heat >= 0
+            and heat < self._race_branch.prev_race.heat_counts
+        ), "Invalid heat number provided."
         self._heat = heat
         self._draw(x, y)
 
@@ -182,8 +190,23 @@ class NumberBox(ABC):
         """Returns a string for the text that should be displayed in the box."""
         if self._race_branch is not None:
             # Normal, race branch provided.
-            if self._race_branch.car is not None:
+            if (
+                self._race_branch.prev_race
+                and self._race_branch.branch_result() == BranchResult.WINNER
+            ):  # TODO: Fix / make this work for loser best of 3.
+                # We have a previous race, use the heat result instead.
+                heat_winner = self._race_branch.prev_race.get_heat_result(self._heat)
+                match heat_winner:
+                    case Race.WINNER_EMPTY:
+                        text = self.StrFixedOptions.EMPTY
+                    case Race.WINNER_DNR:
+                        text = self.StrFixedOptions.DNR
+                    case _:
+                        text = f"{heat_winner}"
+            elif self._race_branch.car is not None:
+                # No previous race provided, use this race branch instead.
                 text = f"{self._race_branch.car.car_id}"
+
             elif self._race_branch.filled:
                 # Filled as empty (DNR)
                 text = self.StrFixedOptions.DNR
@@ -218,7 +241,7 @@ class InteractiveNumberBox(NumberBox):
         sheet: KnockoutSheet,
         override_type_editable: bool,
         is_aux_race: bool,
-        heat: int
+        heat: int,
     ) -> None:
         """Initialises the number box.
 
@@ -235,7 +258,14 @@ class InteractiveNumberBox(NumberBox):
                 BranchType.DEPENDENT_EDITABLE. Defaults to False.
         """
         super().__init__(
-            x, y, race_branch, aux_race_manager, sheet, override_type_editable, is_aux_race=is_aux_race, heat=heat
+            x,
+            y,
+            race_branch,
+            aux_race_manager,
+            sheet,
+            override_type_editable,
+            is_aux_race=is_aux_race,
+            heat=heat,
         )
         self._in_update = False  # Signals if a change to the combobox should be ignored (somewhat like a semaphore).
 
@@ -430,7 +460,7 @@ class NumberBoxFactory(ABC):
         sheet: KnockoutSheet,
         override_type_editable: bool,
         is_aux_race: bool,
-        heat: int
+        heat: int,
     ) -> NumberBox:
         pass
 
@@ -447,11 +477,25 @@ class NumberBoxFactory(ABC):
     ) -> NumberBox:
         if race_branch is None or race_branch.branch_type != BranchType.FIXED:
             return self._create_not_fixed(
-                x, y, race_branch, aux_race_manager, sheet, override_type_editable, is_aux_race=is_aux_race, heat=heat
+                x,
+                y,
+                race_branch,
+                aux_race_manager,
+                sheet,
+                override_type_editable,
+                is_aux_race=is_aux_race,
+                heat=heat,
             )
         else:
             return InitialNumberBox(
-                x, y, race_branch, aux_race_manager, sheet, override_type_editable, is_aux_race=is_aux_race, heat=heat
+                x,
+                y,
+                race_branch,
+                aux_race_manager,
+                sheet,
+                override_type_editable,
+                is_aux_race=is_aux_race,
+                heat=heat,
             )
 
 
@@ -465,7 +509,7 @@ class InteractiveNumberBoxFactory(NumberBoxFactory):
         sheet: KnockoutSheet,
         override_type_editable: bool,
         is_aux_race: bool,
-        heat: int
+        heat: int,
     ) -> NumberBox:
         return InteractiveNumberBox(
             x=x,
@@ -475,7 +519,7 @@ class InteractiveNumberBoxFactory(NumberBoxFactory):
             sheet=sheet,
             override_type_editable=override_type_editable,
             is_aux_race=is_aux_race,
-            heat=heat
+            heat=heat,
         )
 
 
@@ -489,10 +533,17 @@ class PrintNumberBoxFactory(NumberBoxFactory):
         sheet: KnockoutSheet,
         override_type_editable: bool,
         is_aux_race: bool,
-        heat: int
+        heat: int,
     ) -> NumberBox:
         return PrintNumberBox(
-            x, y, race_branch, aux_race_manager, sheet, override_type_editable, is_aux_race=is_aux_race, heat=heat
+            x,
+            y,
+            race_branch,
+            aux_race_manager,
+            sheet,
+            override_type_editable,
+            is_aux_race=is_aux_race,
+            heat=heat,
         )
 
 
@@ -815,6 +866,7 @@ class HintToArrow(HintArrow):
         y: float,
         result: BranchResult,
         lowest_background_handle: int | None,
+        height_offset: float,
         flip: Literal[-1] | Literal[1] = 1,
     ) -> None:
         """Draws an arrow to show where to proceed from a race."""
@@ -822,16 +874,16 @@ class HintToArrow(HintArrow):
             x,
             y,
             x + HINT_ARROW_WIDTH / 3,
-            y + HINT_ARROW_HEIGHT * flip,
+            y + (HINT_ARROW_HEIGHT + height_offset) * flip,
             x + 2 * HINT_ARROW_WIDTH / 3,
-            y + HINT_ARROW_HEIGHT * flip,
+            y + (HINT_ARROW_HEIGHT + height_offset) * flip,
             x + HINT_ARROW_WIDTH,
-            y + HINT_ARROW_HEIGHT * flip,
+            y + (HINT_ARROW_HEIGHT + height_offset) * flip,
         ]
         sheet.canvas.create_line(points, arrow="last", smooth=True)
         text_handle = sheet.canvas.create_text(
             x + HINT_ARROW_WIDTH + SHORT_TEXT_MARGIN,
-            y + HINT_ARROW_HEIGHT * flip,
+            y + (HINT_ARROW_HEIGHT + height_offset) * flip,
             anchor=ttkc.W,
             font=(FONT, FONT_SMALL_SIZE),
         )
@@ -1094,7 +1146,7 @@ class RaceDrawing:
         show_from_arrow: ShowFromArrow,
         lowest_hint_background: int | None,
         override_type_editable: bool = False,
-        is_aux_race: bool = False
+        is_aux_race: bool = False,
     ) -> Tuple[List[NumberBox], HintFromArrow | None]:
         """Draws a numbers box at the specified position.
 
@@ -1109,10 +1161,11 @@ class RaceDrawing:
         Returns:
             NumberBox: The created number box.
         """
-        def box_offset(heat:int, heats:int) -> float:
+
+        def box_offset(heat: int, heats: int) -> float:
             """Calculates the vertical offset needed for a number box when there are multiple heats."""
-            total_height = (heats-1) * HEAT_Y_SPACING
-            return heat*HEAT_Y_SPACING - total_height/2
+            total_height = (heats - 1) * HEAT_Y_SPACING
+            return heat * HEAT_Y_SPACING - total_height / 2
 
         def draw_number_boxes() -> List[NumberBox]:
             """Draws a set of number boxes, one per heat.
@@ -1128,16 +1181,18 @@ class RaceDrawing:
 
             for heat in range(heats):
                 # Draw the box for the number.
-                boxes.append(self._numbers_factory.create(
-                    x=x,
-                    y=y + box_offset(heat, heats),
-                    race_branch=race_branch,
-                    aux_race_manager=self._event.auxilliary_races,
-                    sheet=self._sheet,
-                    override_type_editable=override_type_editable,
-                    is_aux_race=is_aux_race,
-                    heat=heat
-                ))
+                boxes.append(
+                    self._numbers_factory.create(
+                        x=x,
+                        y=y + box_offset(heat, heats),
+                        race_branch=race_branch,
+                        aux_race_manager=self._event.auxilliary_races,
+                        sheet=self._sheet,
+                        override_type_editable=override_type_editable,
+                        is_aux_race=is_aux_race,
+                        heat=heat,
+                    )
+                )
 
             return boxes
 
@@ -1172,7 +1227,6 @@ class RaceDrawing:
 
         if race_branch is not None and self._show_seed:
             draw_seed()
-                
 
         return draw_number_boxes(), draw_from_arrows()
 
@@ -1237,7 +1291,7 @@ class RaceDrawing:
                     race.left_branch,
                     show_from_arrow[0],
                     lowest_hint_background=lowest_hint_background,
-                    is_aux_race=race.is_auxilliary_race
+                    is_aux_race=race.is_auxilliary_race,
                 ),
                 self.draw_number(
                     x,
@@ -1245,7 +1299,7 @@ class RaceDrawing:
                     race.right_branch,
                     show_from_arrow[1],
                     lowest_hint_background=lowest_hint_background,
-                    is_aux_race=race.is_auxilliary_race
+                    is_aux_race=race.is_auxilliary_race,
                 ),
             )
             self._lineset = BracketLineSetNormal(
@@ -1271,7 +1325,7 @@ class RaceDrawing:
                     race.theoretical_winner(),
                     show_from_arrow[0],
                     lowest_hint_background=lowest_hint_background,
-                    is_aux_race=race.is_auxilliary_race
+                    is_aux_race=race.is_auxilliary_race,
                 ),
             )
             self._lineset = BracketLineSetBye(
@@ -1288,29 +1342,6 @@ class RaceDrawing:
         else:
             draw_normal_race()
 
-        # Arrows going from the race.
-        arrow_x = bracket_x_end - style.horizontal_line_length + TEXT_MARGIN
-        if show_loser_label:
-            self._loser_to = HintToArrow(
-                sheet=self._sheet,
-                current_race=race,
-                x=arrow_x,
-                y=y_centre + TEXT_MARGIN,
-                result=BranchResult.LOSER,
-                lowest_background_handle=lowest_hint_background,
-            )
-
-        if show_winner_label:
-            self._winner_to = HintToArrow(
-                sheet=self._sheet,
-                current_race=race,
-                x=arrow_x,
-                y=y_centre - TEXT_MARGIN,
-                result=BranchResult.WINNER,
-                lowest_background_handle=lowest_hint_background,
-                flip=-1,
-            )
-
         right_side = bracket_x_end + TEXT_MARGIN
 
         # Draw the results box if needed.
@@ -1326,9 +1357,37 @@ class RaceDrawing:
                 show_from_arrow=ShowFromArrow.HIDE,
                 override_type_editable=True,
                 lowest_hint_background=lowest_hint_background,
-                is_aux_race=race.is_auxilliary_race
+                is_aux_race=race.is_auxilliary_race,
             )
             right_side += LABEL_WIDTH
+            arrow_height_offset = (len(self._results_box[0]) - 1) * HEAT_Y_SPACING / 2
+        else:
+            arrow_height_offset = 0  # No results box, don't bother with any offset.
+
+        # Arrows going from the race.
+        arrow_x = bracket_x_end - style.horizontal_line_length + TEXT_MARGIN
+        if show_loser_label:
+            self._loser_to = HintToArrow(
+                sheet=self._sheet,
+                current_race=race,
+                x=arrow_x,
+                y=y_centre + TEXT_MARGIN,
+                result=BranchResult.LOSER,
+                height_offset=arrow_height_offset,
+                lowest_background_handle=lowest_hint_background,
+            )
+
+        if show_winner_label:
+            self._winner_to = HintToArrow(
+                sheet=self._sheet,
+                current_race=race,
+                x=arrow_x,
+                y=y_centre - TEXT_MARGIN,
+                result=BranchResult.WINNER,
+                height_offset=arrow_height_offset,
+                lowest_background_handle=lowest_hint_background,
+                flip=-1,
+            )
 
         # Extend the line into the next round if needed.
         return right_side

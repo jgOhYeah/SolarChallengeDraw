@@ -86,7 +86,7 @@ class RaceBranch:
         """Checks if another race has a result and depends on the current one."""
 
         def race_decided(race: Race | Podium | None) -> bool:
-            return race is not None and race.is_result_decided()
+            return race is not None and race.is_result_decided(include_heats=True)
 
         return self.prev_race is not None and (
             race_decided(self.prev_race.winner_next_race)
@@ -291,8 +291,9 @@ class Winnable(ABC):
         return min(max_probability, FillProbability.LIKELY)
 
     @abstractmethod
-    def is_result_decided(self) -> bool:
-        """Checks if the result for the current race or podium is decided."""
+    def is_result_decided(self, include_heats:bool=False) -> bool:
+        """Checks if the result for the current race or podium is decided.
+        If include_heats is True, any results for a heat will be considered as descided."""
         pass
 
     @abstractmethod
@@ -350,7 +351,7 @@ class Podium(Winnable):
     def get_expected_competitors(self, min_fill_probability: FillProbability) -> int:
         return 1
 
-    def is_result_decided(self) -> bool:
+    def is_result_decided(self, include_heats:bool=False) -> bool:
         # return self.branch.car is not None
         return False  # We always need to be able to edit the input branch of a podium (avoids not being able to edit the results of the grand final).
 
@@ -523,6 +524,9 @@ class Race(Winnable):
             # Not valid as we have multiple of the same count or not enough.
             self._set_overall_winner(self.WINNER_EMPTY, auxilliary_manager=auxilliary_manager)
 
+    def get_heat_result(self, heat:int) -> int:
+        return self._heats[heat]
+
     def _set_overall_winner(
         self, car_number: int, auxilliary_manager: AuxilliaryRaceManager
     ) -> None:
@@ -623,7 +627,7 @@ class Race(Winnable):
             self.right_branch.fill_probability() >= min_fill_probability
         )
 
-    def is_result_decided(self) -> bool:
+    def is_result_decided(self, include_heats:bool=False) -> bool:
         """Checks if the result for the current race is decided."""
 
         def check_race(race: Race | Podium | None) -> bool:
@@ -636,7 +640,12 @@ class Race(Winnable):
                 # Nothing here to be decided.
                 return False
 
-        return check_race(self.winner_next_race) or check_race(self.loser_next_race)
+        heats_filled = False
+        for heat in self._heats:
+            if heat != self.WINNER_EMPTY:
+                heats_filled = True
+
+        return check_race(self.winner_next_race) or check_race(self.loser_next_race) or include_heats and heats_filled
 
     def __repr__(self) -> str:
         def car_none_str(car_none: Car | None):

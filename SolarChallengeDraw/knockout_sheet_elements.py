@@ -87,7 +87,7 @@ class NumberBox(ABC):
         sheet: KnockoutSheet,
         override_type_editable: bool,
         is_aux_race: bool,
-        heat: int,
+        heat: int | None,
     ) -> None:
         """Initialises the number box.
 
@@ -110,16 +110,6 @@ class NumberBox(ABC):
         self._sheet = sheet
         self._override_type_editable = override_type_editable
         self._is_aux_race = is_aux_race
-
-        assert (
-            heat == 0
-            and (self._race_branch is None or self._race_branch.prev_race is None)
-        ) or (
-            self._race_branch is not None
-            and self._race_branch.prev_race is not None
-            and heat >= 0
-            and heat < self._race_branch.prev_race.heat_counts
-        ), "Invalid heat number provided."
         self._heat = heat
         self._draw(x, y)
 
@@ -191,10 +181,11 @@ class NumberBox(ABC):
         if self._race_branch is not None:
             # Normal, race branch provided.
             if (
-                self._race_branch.prev_race
+                self._heat is not None
+                and self._race_branch.prev_race
                 and self._race_branch.branch_result() == BranchResult.WINNER
             ):  # TODO: Fix / make this work for loser best of 3.
-                # We have a previous race, use the heat result instead.
+                # We have a previous race and specific heat, use the heat result instead.
                 heat_winner = self._race_branch.prev_race.get_heat_result(self._heat)
                 match heat_winner:
                     case Race.WINNER_EMPTY:
@@ -241,7 +232,7 @@ class InteractiveNumberBox(NumberBox):
         sheet: KnockoutSheet,
         override_type_editable: bool,
         is_aux_race: bool,
-        heat: int,
+        heat: int | None,
     ) -> None:
         """Initialises the number box.
 
@@ -307,19 +298,30 @@ class InteractiveNumberBox(NumberBox):
                 assert (
                     self._race_branch.prev_race is not None
                 ), "There should be a previous race to select values from."
+
+                def none_to_0(heat: int | None) -> int:
+                    if heat is None:
+                        return 0
+                    else:
+                        return heat
+
                 match selected:
                     case self.StrFixedOptions.EMPTY:
                         self._race_branch.prev_race.set_winner(
-                            self._heat, Race.WINNER_EMPTY, self._aux_race_manager
+                            none_to_0(self._heat),
+                            Race.WINNER_EMPTY,
+                            self._aux_race_manager,
                         )
                     case self.StrFixedOptions.DNR:
                         self._race_branch.prev_race.set_winner(
-                            self._heat, Race.WINNER_DNR, self._aux_race_manager
+                            none_to_0(self._heat),
+                            Race.WINNER_DNR,
+                            self._aux_race_manager,
                         )
                     case _:
                         number = int(selected)
                         self._race_branch.prev_race.set_winner(
-                            self._heat, number, self._aux_race_manager
+                            none_to_0(self._heat), number, self._aux_race_manager
                         )
 
                 self._sheet.update()
@@ -460,7 +462,7 @@ class NumberBoxFactory(ABC):
         sheet: KnockoutSheet,
         override_type_editable: bool,
         is_aux_race: bool,
-        heat: int,
+        heat: int | None,
     ) -> NumberBox:
         pass
 
@@ -473,7 +475,7 @@ class NumberBoxFactory(ABC):
         sheet: KnockoutSheet,
         override_type_editable: bool,
         is_aux_race: bool,
-        heat: int,
+        heat: int | None,
     ) -> NumberBox:
         if race_branch is None or race_branch.branch_type != BranchType.FIXED:
             return self._create_not_fixed(
@@ -509,7 +511,7 @@ class InteractiveNumberBoxFactory(NumberBoxFactory):
         sheet: KnockoutSheet,
         override_type_editable: bool,
         is_aux_race: bool,
-        heat: int,
+        heat: int | None,
     ) -> NumberBox:
         return InteractiveNumberBox(
             x=x,
@@ -533,7 +535,7 @@ class PrintNumberBoxFactory(NumberBoxFactory):
         sheet: KnockoutSheet,
         override_type_editable: bool,
         is_aux_race: bool,
-        heat: int,
+        heat: int | None,
     ) -> NumberBox:
         return PrintNumberBox(
             x,
@@ -717,7 +719,7 @@ class NotesBox:
         self._canvas = canvas
         self._top_left = top_left
         self._bottom_right = bottom_right
-        self._canvas.create_rectangle(self._top_left, self._bottom_right)
+        self._canvas.create_rectangle(self._top_left, self._bottom_right, fill="white")
         self.y_pos: float = self._top_left[1] + TEXT_MARGIN
 
     def add_text(
@@ -1652,3 +1654,85 @@ class EventStartArrow(ArrowBetweenRounds):
         ]
 
         return self._sheet.canvas.create_polygon(points, **kwargs, smooth=True)
+
+
+class PodiumHintNote(HintFromArrow):
+    """Class that shows the label for a podium."""
+
+    def __init__(
+        self,
+        sheet: KnockoutSheet,
+        podium: Podium,
+        x: float,
+        y: float,
+        lowest_background_handle: int | None,
+    ) -> None:
+        self._podium = podium
+        super().__init__(sheet, podium.branch, x, y, lowest_background_handle)
+
+    def _text(
+        self, decided: bool, result: BranchResult, race_name: str, dnr: bool
+    ) -> str:
+        return (
+            f"{self._podium.name()}\n({super()._text(decided, result, race_name, dnr)})"
+        )
+
+
+class FinalResults(NotesBox):
+    """Class that draws the final results on the sheet."""
+
+    def __init__(
+        self,
+        sheet: KnockoutSheet,
+        event: KnockoutEvent,
+        numbers_factory: NumberBoxFactory,
+        bottom_right: Tuple[float, float],
+    ) -> None:
+        self._sheet = sheet
+        self._event = event
+        self._numbers_factory = numbers_factory
+        left_side = bottom_right[0] - (2 * TEXT_MARGIN + LABEL_WIDTH + 110)
+        top_side = bottom_right[1] - (5 * TEXT_MARGIN + 4 * LABEL_HEIGHT + 25)
+        self._number_boxes: List[NumberBox] = []
+        self._hints: List[PodiumHintNote] = []
+        super().__init__(sheet.canvas, (left_side, top_side), bottom_right)
+        self._draw()
+
+    def _draw(self) -> None:
+        self.process_markdown_line("# Final results")
+
+        def add_podium(podium: Podium) -> None:
+            x_pos = self._bottom_right[0] - TEXT_MARGIN - LABEL_WIDTH
+            y_pos = self.y_pos + LABEL_HEIGHT / 2
+            self._hints.append(
+                PodiumHintNote(
+                    sheet=self._sheet,
+                    podium=podium,
+                    x=x_pos,
+                    y=y_pos,
+                    lowest_background_handle=None,
+                )
+            )
+            self._number_boxes.append(
+                self._numbers_factory.create(
+                    x=x_pos,
+                    y=y_pos,
+                    race_branch=podium.branch,
+                    aux_race_manager=self._event.auxilliary_races,
+                    sheet=self._sheet,
+                    override_type_editable=False,
+                    is_aux_race=False,
+                    heat=None,
+                )
+            )
+            self.y_pos += TEXT_MARGIN + LABEL_HEIGHT
+
+        for p in self._event.podiums:
+            add_podium(p)
+
+    def update(self) -> None:
+        for n in self._number_boxes:
+            n.update()
+
+        for h in self._hints:
+            h.update()

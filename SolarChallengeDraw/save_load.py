@@ -151,7 +151,7 @@ class CarCSVLoader(Loader):
         filename: str | None = None,
         cars: List[Car] | None = None,
         knockout: KnockoutEvent | None = None,
-        grand_final_heats: int = 3 # TODO:
+        grand_final_heats: int = 3 # TODO: Customisable.
     ) -> None:
         super().__init__(cars=cars, knockout=knockout, filename=filename)
         self.grand_final_heats = grand_final_heats

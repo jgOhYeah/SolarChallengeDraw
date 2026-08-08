@@ -41,6 +41,7 @@ from knockout_sheet_elements import (
     ArrowBetweenRounds,
     AuxilliaryRaceSheet,
     EventStartArrow,
+    FinalResults,
     NotesBox,
     NumberBoxFactory,
     RaceDrawing,
@@ -166,17 +167,20 @@ class KnockoutSheet:
             x_offset=self._aux_race_section_width + LEFT_MARGIN + TEXT_MARGIN,
             y_offset=suptitle_bottom + 45,
         )
-        self.draw_notes(event, self._width - RIGHT_MARGIN, self._height - BOTTOM_MARGIN)
+        notes_top = self.draw_notes(event, self._width - RIGHT_MARGIN, self._height - BOTTOM_MARGIN)
         self.draw_aux_races(event, numbers, suptitle_bottom)
+        self.draw_final_results(event, numbers, x=self._width - RIGHT_MARGIN, y=notes_top-TEXT_MARGIN)
 
-    def draw_notes(self, event: KnockoutEvent, x: float, y: float) -> None:
-        notes_box = NotesBox(self.canvas, (x - 450, y - 300), (x, y))
+    def draw_notes(self, event: KnockoutEvent, x: float, y: float) -> float:
+        top = y - 250
+        notes_box = NotesBox(self.canvas, (x - 450, top), (x, y))
         src_filename = os.path.join(os.path.dirname(__file__), "notes.md")
         notes_box.read_markdown(src_filename)
         notes_box.add_text(
             f"Rounds will be run in the following order:\n{event.calculate_play_order()}",
             bullet_point=True,
         )
+        return top
 
     def draw_aux_races(
         self, event: KnockoutEvent, numbers: NumberBoxFactory, y_offset: float
@@ -265,6 +269,7 @@ class KnockoutSheet:
             next_round_height: float,
             next_round_offset: float,
             round_name: str,
+            comment:str|None = None
         ) -> Tuple[float, float, float]:
             """Draws a box around a round in either the winners' or losers' brackets.
 
@@ -275,6 +280,7 @@ class KnockoutSheet:
                 round (List[Race]): The round itself.
                 columns_wide (int): The number of columns wide to draw the round to make it line up correctly.
                 round_name (str): Round name to print.
+                comment (str|None): Optional comment
 
             Returns:
                 float: Attachment points for to / from arrows.
@@ -293,10 +299,26 @@ class KnockoutSheet:
             preferred_text_location = y_centre - (height / 2) - offset
             text_y_bottom = min(next_round_top, preferred_text_location) - TEXT_MARGIN
 
+            if comment is not None:
+                _, title_bottom, _, _ = self.canvas.bbox(
+                    self.canvas.create_text(
+                        box_centre,
+                        text_y_bottom,
+                        anchor=ttkc.S,
+                        text=comment,
+                        width=2 * box_half_width - 2 * TEXT_MARGIN,
+                        font=(FONT, FONT_NORMAL_SIZE),
+                        fill="black",
+                        justify="center"
+                    )
+                )
+            else:
+                title_bottom = text_y_bottom
+
             _, text_y_top, _, _ = self.canvas.bbox(
                 self.canvas.create_text(
                     box_centre,
-                    text_y_bottom,
+                    title_bottom,
                     anchor=ttkc.S,
                     text=round_name,
                     width=2 * box_half_width - 2 * TEXT_MARGIN,
@@ -563,6 +585,7 @@ class KnockoutSheet:
                 next_round_height=0,
                 next_round_offset=0,
                 round_name=f"Grand final",
+                comment=f"Best of {event.grand_final.heat_counts} heats"
             )
 
             # Check the results box.
@@ -699,6 +722,14 @@ class KnockoutSheet:
         # Event start message.
         EventStartArrow(self, get_coord_set(order[0], False))
 
+    def draw_final_results(self, event:KnockoutEvent, numbers:NumberBoxFactory, x:float, y:float) -> None:
+        self._final_results = FinalResults(
+            sheet=self,
+            event=event,
+            numbers_factory=numbers,
+            bottom_right=(x, y)
+        )
+
     def update(self) -> None:
         """Updates each item on the sheet."""
         # print("Not updating here.")
@@ -708,7 +739,7 @@ class KnockoutSheet:
             drawing.update()
 
         self._aux_races.update()
-
+        self._final_results.update()
         # self._frame.after(2000, self.manual_update)
 
     def _clear(self) -> None:

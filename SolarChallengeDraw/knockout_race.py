@@ -291,9 +291,10 @@ class Winnable(ABC):
         return min(max_probability, FillProbability.LIKELY)
 
     @abstractmethod
-    def is_result_decided(self, include_heats:bool=False) -> bool:
+    def is_result_decided(self, include_heats: bool = False) -> bool:
         """Checks if the result for the current race or podium is decided.
-        If include_heats is True, any results for a heat will be considered as descided."""
+        If include_heats is True, any results for a heat will be considered as descided.
+        """
         pass
 
     @abstractmethod
@@ -351,7 +352,7 @@ class Podium(Winnable):
     def get_expected_competitors(self, min_fill_probability: FillProbability) -> int:
         return 1
 
-    def is_result_decided(self, include_heats:bool=False) -> bool:
+    def is_result_decided(self, include_heats: bool = False) -> bool:
         # return self.branch.car is not None
         return False  # We always need to be able to edit the input branch of a podium (avoids not being able to edit the results of the grand final).
 
@@ -397,7 +398,7 @@ class Race(Winnable):
         loser_next_race: Race | Podium | None = None,
         is_auxilliary_race: bool = False,
         race_number: int = 0,
-        number_heats: int = 1
+        number_heats: int = 1,
     ):
         self.left_branch = left_branch
         self.right_branch = right_branch
@@ -407,8 +408,10 @@ class Race(Winnable):
         self._is_auxilliary_race = is_auxilliary_race
 
         # Race heats.
-        assert number_heats % 2 and number_heats >= 1, "The number of heats (Best of races) should be odd and >= 1."
-        self._heats: List[int] = [self.WINNER_EMPTY]*number_heats
+        assert (
+            number_heats % 2 and number_heats >= 1
+        ), "The number of heats (Best of races) should be odd and >= 1."
+        self._heats: List[int] = [self.WINNER_EMPTY] * number_heats
 
     def theoretical_winner(self) -> RaceBranch:
         """Calculates the theoretical winner based on seeding.
@@ -471,8 +474,12 @@ class Race(Winnable):
             or self.right_branch.branch_type == BranchType.FIXED
         )
 
-    WINNER_EMPTY = -1 # Represents no winner filled in for the current race (use in place of a car number).
-    WINNER_DNR = -2 # Represents that all competitors failed to run in the current race (use in place of a car number).
+    WINNER_EMPTY = (
+        -1
+    )  # Represents no winner filled in for the current race (use in place of a car number).
+    WINNER_DNR = (
+        -2
+    )  # Represents that all competitors failed to run in the current race (use in place of a car number).
 
     def get_options(self) -> List[Car]:
         """Returns a list of options that may win the race.
@@ -499,17 +506,21 @@ class Race(Winnable):
 
     def _get_options_ids(self) -> List[int]:
         """Returns a list of car ids as option to win this race, including DNR and EMPTY."""
-        return [i.car_id for i in self.get_options()] + [self.WINNER_DNR, self.WINNER_EMPTY]
-    
-    def set_winner(self, heat:int, car_number: int, auxilliary_manager: AuxilliaryRaceManager) -> None:
+        return [i.car_id for i in self.get_options()] + [
+            self.WINNER_DNR,
+            self.WINNER_EMPTY,
+        ]
+
+    def set_winner(
+        self, heat: int, car_number: int, auxilliary_manager: AuxilliaryRaceManager
+    ) -> None:
         assert heat >= 0 and heat < len(self._heats), "Invalid heat number."
         assert car_number in self._get_options_ids(), "Invalid winning car ID provided."
         self._heats[heat] = car_number
         self._tally_heats(auxilliary_manager=auxilliary_manager)
 
     def _tally_heats(self, auxilliary_manager: AuxilliaryRaceManager) -> None:
-        """Tallies up the number of heats that have been run and calls _set_overall_winner() to propagate the overall winner onward.
-        """
+        """Tallies up the number of heats that have been run and calls _set_overall_winner() to propagate the overall winner onward."""
         # Count up the number of wins for each.
         win_counts = {}.fromkeys(self._get_options_ids(), 0)
         for heat, result in enumerate(self._heats):
@@ -517,14 +528,21 @@ class Race(Winnable):
 
         # Check the most common two occurances. If the most common is has a different number to the second most common, then this is a valid outcome of the heats (includes DNR and empty). Otherwise treat as empty.
         most_common = sorted(win_counts.items(), key=lambda pair: pair[1], reverse=True)
-        if most_common[0][1] != most_common[1][1] and most_common[0][1] > len(self._heats) / 2:
+        if (
+            most_common[0][1] != most_common[1][1]
+            and most_common[0][1] > len(self._heats) / 2
+        ):
             # We have a valid outcome / empty.
-            self._set_overall_winner(most_common[0][0], auxilliary_manager=auxilliary_manager)
+            self._set_overall_winner(
+                most_common[0][0], auxilliary_manager=auxilliary_manager
+            )
         else:
             # Not valid as we have multiple of the same count or not enough.
-            self._set_overall_winner(self.WINNER_EMPTY, auxilliary_manager=auxilliary_manager)
+            self._set_overall_winner(
+                self.WINNER_EMPTY, auxilliary_manager=auxilliary_manager
+            )
 
-    def get_heat_result(self, heat:int) -> int:
+    def get_heat_result(self, heat: int) -> int:
         return self._heats[heat]
 
     def _set_overall_winner(
@@ -627,7 +645,7 @@ class Race(Winnable):
             self.right_branch.fill_probability() >= min_fill_probability
         )
 
-    def is_result_decided(self, include_heats:bool=False) -> bool:
+    def is_result_decided(self, include_heats: bool = False) -> bool:
         """Checks if the result for the current race is decided."""
 
         def check_race(race: Race | Podium | None) -> bool:
@@ -645,7 +663,12 @@ class Race(Winnable):
             if heat != self.WINNER_EMPTY:
                 heats_filled = True
 
-        return check_race(self.winner_next_race) or check_race(self.loser_next_race) or include_heats and heats_filled
+        return (
+            check_race(self.winner_next_race)
+            or check_race(self.loser_next_race)
+            or include_heats
+            and heats_filled
+        )
 
     def __repr__(self) -> str:
         def car_none_str(car_none: Car | None):
@@ -673,6 +696,7 @@ class Race(Winnable):
         WINNER_NEXT_RACE = "Winner next race"
         LOSER_NEXT_RACE = "Loser next race"
         RACE_NUMBER = "Race number"
+        HEATS = "Heats"
 
     def to_dict(self) -> Dict[Winnable.Fields, Any]:
         def name_or_none(race: Winnable | None) -> str | None:
@@ -687,7 +711,9 @@ class Race(Winnable):
             self.Fields.RIGHT_BRANCH: self.right_branch.to_dict(),
             self.Fields.WINNER_NEXT_RACE: name_or_none(self.winner_next_race),
             self.Fields.LOSER_NEXT_RACE: name_or_none(self.loser_next_race),
-        } | super().to_dict()        
+            self.Fields.HEATS: self._heats,
+        } | super().to_dict()
+
 
 class Loading(ABC):
     """A base class for objects that can be loaded from a dictionary and need placeholder references replaced once everything is created."""
@@ -745,11 +771,13 @@ class LoadingRace(Race, Loading):
             loser_next_race=None,
             is_auxilliary_race=aux_race,
             race_number=dictionary[self.Fields.RACE_NUMBER],
+            number_heats=len(dictionary[self.Fields.HEATS]),
         )
         self._placeholder_winner_next_race: str = dictionary[
             self.Fields.WINNER_NEXT_RACE
         ]
         self._placeholder_loser_next_race: str = dictionary[self.Fields.LOSER_NEXT_RACE]
+        self._heats = dictionary[self.Fields.HEATS]
 
     @classmethod
     def load_round_from_dict(

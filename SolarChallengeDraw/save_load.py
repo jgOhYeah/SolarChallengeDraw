@@ -18,11 +18,18 @@ from knockout_race import Race, RaceBranch
 
 
 class Metadata:
+    current_hash: str|None = None
+
     def __init__(self) -> None:
-        self.git_hash = self._get_git_revision_short_hash() # Assuming this won't change often.
+        if self.current_hash is None:
+            # Only check the first time to reduce extra process calls.
+            self.current_hash = self._get_git_revision_short_hash()
+        self.git_hash = self.current_hash
+
         self.update()
 
     def update(self) -> None:
+        self.git_hash = self.current_hash
         self.modification_date = datetime.now()
 
     def _get_git_revision_short_hash(self) -> str:
@@ -59,7 +66,13 @@ class Metadata:
         return metadata
 
     def __str__(self) -> str:
-        return f"Modified {self.modification_date.isoformat(sep=' ', timespec='minutes')}, Git commit '{self.git_hash}'"
+        base = f"Modified {self.modification_date.isoformat(sep=' ', timespec='minutes')}, Git commit '{self.git_hash}'"
+        if self.current_hash != self.git_hash:
+            extras = f" (opened with '{self.current_hash}')"
+        else:
+            extras = ""
+
+        return base + extras
 
 
 class Loader(ABC):

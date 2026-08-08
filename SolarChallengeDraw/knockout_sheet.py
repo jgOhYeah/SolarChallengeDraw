@@ -42,6 +42,7 @@ from knockout_sheet_elements import (
     AuxilliaryRaceSheet,
     EventStartArrow,
     FinalResults,
+    MetadataLine,
     NotesBox,
     NumberBoxFactory,
     RaceDrawing,
@@ -49,6 +50,7 @@ from knockout_sheet_elements import (
     ShowFromArrow,
     HINT_ARROW_WIDTH,
 )
+from save_load import Metadata
 
 
 class KnockoutSheet:
@@ -150,7 +152,7 @@ class KnockoutSheet:
         )
 
     def draw_canvas(
-        self, event: KnockoutEvent, numbers: NumberBoxFactory, show_seed: bool = True
+        self, event: KnockoutEvent, metadata:Metadata, numbers: NumberBoxFactory, show_seed: bool = True
     ) -> None:
         """Draws the knockout event on the canvas.
 
@@ -167,9 +169,15 @@ class KnockoutSheet:
             x_offset=self._aux_race_section_width + LEFT_MARGIN + TEXT_MARGIN,
             y_offset=suptitle_bottom + 45,
         )
-        notes_top = self.draw_notes(event, self._width - RIGHT_MARGIN, self._height - BOTTOM_MARGIN)
+        metadata_top = self.draw_metadate(metadata, self._width - RIGHT_MARGIN, self._height-BOTTOM_MARGIN)
+        notes_top = self.draw_notes(event, self._width - RIGHT_MARGIN, metadata_top-SHORT_TEXT_MARGIN)
         self.draw_aux_races(event, numbers, suptitle_bottom)
         self.draw_final_results(event, numbers, x=self._width - RIGHT_MARGIN, y=notes_top-TEXT_MARGIN)
+
+    def draw_metadate(self, metadata:Metadata, x:float, y:float) -> float:
+        self._metadata = MetadataLine(metadata)
+        _, top = self._metadata.draw(self.canvas, (x,y))
+        return top
 
     def draw_notes(self, event: KnockoutEvent, x: float, y: float) -> float:
         top = y - 250
@@ -225,6 +233,7 @@ class KnockoutSheet:
                 print("Updating the event title")
                 event.name = new_title
                 self.canvas.itemconfigure(text_id, text=event.name)
+                self.update() # Make sure the metadata is kept up to date.
 
         self.canvas.tag_bind(text_id, "<Button-1>", edit_title)
         self.canvas.tag_bind(
@@ -732,14 +741,12 @@ class KnockoutSheet:
 
     def update(self) -> None:
         """Updates each item on the sheet."""
-        # print("Not updating here.")
-
-        # def manual_update(self) -> None:
         for drawing in self._races:
             drawing.update()
 
         self._aux_races.update()
         self._final_results.update()
+        self._metadata.update()
         # self._frame.after(2000, self.manual_update)
 
     def _clear(self) -> None:

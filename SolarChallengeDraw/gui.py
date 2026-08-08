@@ -21,7 +21,7 @@ from knockout_sheet_elements import (
 )
 from knockout_sheet import KnockoutSheet
 from file_picker import FilePicker
-from save_load import CarCSVLoader, JSONLoader, Loader
+from save_load import CarCSVLoader, JSONLoader, Loader, Metadata
 import solarcardrawtheme_theme
 
 PAD_FULL = 10
@@ -119,13 +119,21 @@ class KnockoutTab(AppTab):
         self._gui_sheet = KnockoutSheet(self._frame, 1, 0)
         self._print_sheet = KnockoutSheet(self._frame, None, None)
 
-    def draw_event(self, event: KnockoutEvent, show_seed: bool) -> None:
+    def draw_event(
+        self, event: KnockoutEvent, metadata: Metadata, show_seed: bool
+    ) -> None:
         """Draws the event on screen and in the print canvas."""
         self._gui_sheet.draw_canvas(
-            event, InteractiveNumberBoxFactory(), show_seed=show_seed
+            event,
+            metadata=metadata,
+            numbers=InteractiveNumberBoxFactory(),
+            show_seed=show_seed,
         )
         self._print_sheet.draw_canvas(
-            event, PrintNumberBoxFactory(), show_seed=show_seed
+            event,
+            metadata=metadata,
+            numbers=PrintNumberBoxFactory(),
+            show_seed=show_seed,
         )
         self._set_enable(True)
         self._select_me()
@@ -231,7 +239,7 @@ class Gui:
 
     def load_and_draw(self, loader: Loader) -> None:
         self.loaded = True
-        self.knockout.draw_event(event=loader.knockout, show_seed=self._show_seed)
+        self.knockout.draw_event(event=loader.knockout, metadata=loader.metadata, show_seed=self._show_seed)
         self._json_loader.copy_from(loader)
 
     def save_event(self, _) -> None:

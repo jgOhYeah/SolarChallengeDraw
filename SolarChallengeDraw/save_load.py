@@ -10,10 +10,56 @@ from typing import Any, Dict, List, cast
 import pandas as pd
 import numpy as np
 import json
-
+import subprocess
+from datetime import datetime
 from car import Car
 from knockout import KnockoutEvent
 from knockout_race import Race, RaceBranch
+
+
+class Metadata:
+    def __init__(self) -> None:
+        self.git_hash = self._get_git_revision_short_hash() # Assuming this won't change often.
+        self.update()
+
+    def update(self) -> None:
+        self.modification_date = datetime.now()
+
+    def _get_git_revision_short_hash(self) -> str:
+        """Returns the git commit hash for use in the metadata.
+        Copied from https://stackoverflow.com/a/21901260
+
+        Returns:
+            str: The short hash.
+        """
+        try:
+            result = subprocess.check_output(["git", "rev-parse", "--short", "HEAD"]).decode("ascii").strip()
+        except:
+            result ="???"
+
+        return result
+
+    class Fields(StrEnum):
+        GIT_HASH = "Git hash"
+        DATE = "Date"
+
+    TIME_FORMAT = "%Y-%m-%d %H:%M"
+
+    def to_dict(self) -> Dict[Metadata.Fields, Any]:
+        return {
+            self.Fields.GIT_HASH: self.git_hash,
+            self.Fields.DATE: self.modification_date.strftime(self.TIME_FORMAT)
+        }
+
+    @classmethod
+    def from_dict(cls, dict:Dict[Metadata.Fields, Any]) -> Metadata:
+        metadata = Metadata()
+        metadata.modification_date = datetime.strptime(dict[cls.Fields.DATE], cls.TIME_FORMAT)
+        metadata.git_hash = dict[cls.Fields.GIT_HASH]
+        return metadata
+
+    def __str__(self) -> str:
+        return f"Modified {self.modification_date.isoformat(sep=' ', timespec='minutes')}, Git commit '{self.git_hash}'"
 
 
 class Loader(ABC):
@@ -23,10 +69,12 @@ class Loader(ABC):
         self,
         cars: List[Car] | None,
         knockout: KnockoutEvent | None,
+        metadata: Metadata | None,
         filename: str | None,
     ) -> None:
         self._cars = cars
         self._knockout = knockout
+        self._metadata = metadata
         self.filename = filename
 
     def is_loaded(self) -> bool:
@@ -71,6 +119,23 @@ class Loader(ABC):
         """
         self._knockout = knockout
 
+    @property
+    def metadata(self) -> Metadata:
+        """Property that contains the metadata for the event."""
+        if self._metadata is not None:
+            return self._metadata
+        else:
+            raise self.NotYetLoadedError("The metadata has not been loaded yet.")
+
+    @metadata.setter
+    def metadata(self, metadata: Metadata) -> None:
+        """Saves the metadata for the event.
+
+        Args:
+            metadata (Metadata): The metadata to save.
+        """
+        self._metadata = metadata
+
     def save(self) -> None:
         """Saves the results"""
         raise NotImplementedError("Saving is not implemented for this loader.")
@@ -107,11 +172,15 @@ class JSONLoader(Loader):
         filename: str | None = None,
         cars: List[Car] | None = None,
         knockout: KnockoutEvent | None = None,
+        metadata: Metadata | None = None,
     ) -> None:
-        super().__init__(cars=cars, knockout=knockout, filename=filename)
+        super().__init__(
+            cars=cars, knockout=knockout, filename=filename, metadata=metadata
+        )
         self.filename = filename
 
     class Fields(StrEnum):
+        METADATA = "Metadata"
         CARS = "Cars"
         KNOCKOUT = "Knockout"
 
@@ -122,8 +191,13 @@ class JSONLoader(Loader):
             cars_list = [c.to_dict() for c in self._cars]
 
         knockout_dict = self._knockout.to_dict() if self._knockout is not None else None
+        metadata_dict = self._metadata.to_dict() if self._metadata is not None else None
 
-        combined = {self.Fields.CARS: cars_list, self.Fields.KNOCKOUT: knockout_dict}
+        combined = {
+            self.Fields.METADATA: metadata_dict,
+            self.Fields.CARS: cars_list,
+            self.Fields.KNOCKOUT: knockout_dict,
+        }
         self._check_filename()
         with open(cast(str, self.filename), "w") as file:
             json.dump(combined, file, indent=4)
@@ -142,6 +216,14 @@ class JSONLoader(Loader):
         knockout_dict = combined_dict[self.Fields.KNOCKOUT]
         self._knockout = KnockoutEvent.from_dict(knockout_dict, self.cars)
 
+        # Metadata
+        metadata_dict = combined_dict[self.Fields.METADATA]
+        if metadata_dict is not None:
+            self._metadata = Metadata.from_dict(metadata_dict)
+        else:
+            print("WARNING: No metadata present. Creating fresh metadata.")
+            self._metadata = Metadata()
+
 
 class CarCSVLoader(Loader):
     """Loads cars from a CSV file."""
@@ -151,12 +233,15 @@ class CarCSVLoader(Loader):
         filename: str | None = None,
         cars: List[Car] | None = None,
         knockout: KnockoutEvent | None = None,
-        grand_final_heats: int = 3 # TODO: Customisable.
+        metadata: Metadata | None = None,
+        grand_final_heats: int = 3,  # TODO: Customisable.
     ) -> None:
-        super().__init__(cars=cars, knockout=knockout, filename=filename)
+        super().__init__(
+            cars=cars, knockout=knockout, filename=filename, metadata=metadata
+        )
         self.grand_final_heats = grand_final_heats
 
-    def load(self) -> None:
+    def load(self) -> None:  # TODO: Randomise cars with a seed if needed.
         self._check_filename()
         car_df = pd.read_csv(cast(str, self.filename))
         self._cars = [
@@ -164,11 +249,13 @@ class CarCSVLoader(Loader):
             for dt in car_df.to_dict(orient="records")
         ]
 
-        aux_races = 2**(int(np.ceil(np.log2(len(self._cars))))-1) + 2
+        aux_races = 2 ** (int(np.ceil(np.log2(len(self._cars)))) - 1) + 2
 
         self._knockout = KnockoutEvent.new_from_cars(
             cars=self.cars,
             name=os.path.basename(cast(str, self.filename)),
             max_auxilliary_races=aux_races,
-            grand_final_heats=self.grand_final_heats
+            grand_final_heats=self.grand_final_heats,
         )
+
+        self._metadata = Metadata()

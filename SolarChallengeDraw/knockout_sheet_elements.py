@@ -16,6 +16,7 @@ if TYPE_CHECKING:
     # https://stackoverflow.com/a/39757388
     from knockout_sheet import KnockoutSheet
 
+from save_load import Metadata
 from car import Car
 from knockout import AuxilliaryRaceManager, KnockoutEvent
 from knockout_race import (
@@ -1736,3 +1737,26 @@ class FinalResults(NotesBox):
 
         for h in self._hints:
             h.update()
+
+class MetadataLine:
+    """Line that contains metadata text."""
+    def __init__(self, metadata:Metadata) -> None:
+        self._metadata = metadata
+
+    def draw(self, canvas:tk.Canvas, bottom_right:Tuple[float, float]) -> Tuple[float, float]:
+        self._canvas = canvas
+        self._text_handle = canvas.create_text(
+            bottom_right[0],
+            bottom_right[1],
+            text=str(self._metadata),
+            anchor=ttkc.SE,
+            font=(FONT, FONT_SMALL_SIZE),
+            fill="black",
+        )
+        left, top, _, _ = canvas.bbox(self._text_handle)
+        return left, top
+
+    def update(self) -> None:
+        self._metadata.update()
+        self._canvas.itemconfigure(self._text_handle, text=str(self._metadata))
+    

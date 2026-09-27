@@ -76,8 +76,8 @@ class KnockoutSheet:
         if start_row is not None and start_column is not None:
             self._setup_gui(start_row, start_column)
 
-        self._aux_sizing = RaceStyle(0)
-        self._normal_sizing = RaceStyle(0)
+        self._aux_sizing = RaceStyle(60)
+        self._normal_sizing = RaceStyle(70)
 
     def _setup_gui(self, start_row: int, start_column: int) -> None:
         """Sets up the canvas and adds scrolling.
@@ -152,7 +152,11 @@ class KnockoutSheet:
         )
 
     def draw_canvas(
-        self, event: KnockoutEvent, metadata:Metadata, numbers: NumberBoxFactory, show_seed: bool = True
+        self,
+        event: KnockoutEvent,
+        metadata: Metadata,
+        numbers: NumberBoxFactory,
+        show_seed: bool = True,
     ) -> None:
         """Draws the knockout event on the canvas.
 
@@ -160,7 +164,7 @@ class KnockoutSheet:
             event (KnockoutEvent): The event to plot.
         """
         self._clear()
-        self._normal_sizing = RaceStyle(len(event.winners_bracket[0]))
+        self._event = event # This is an afterthought to allow the title to be updated. Everything else has an instance passed in to it. # TODO: Make neater.
         suptitle_bottom = self.draw_title(event)
         self.draw_tree(
             event=event,
@@ -169,26 +173,35 @@ class KnockoutSheet:
             x_offset=self._aux_race_section_width + LEFT_MARGIN + TEXT_MARGIN,
             y_offset=suptitle_bottom + 45,
         )
-        metadata_top = self.draw_metadate(metadata, self._width - RIGHT_MARGIN, self._height-BOTTOM_MARGIN)
-        notes_top = self.draw_notes(event, self._width - RIGHT_MARGIN, metadata_top-SHORT_TEXT_MARGIN)
+        notes_left, notes_top = self.draw_notes(
+            event, self._width - RIGHT_MARGIN, self._height - BOTTOM_MARGIN
+        )
+        metadata_top = self.draw_metadate(
+            metadata, notes_left - TEXT_MARGIN, self._height - BOTTOM_MARGIN
+        )
         self.draw_aux_races(event, numbers, suptitle_bottom)
-        self.draw_final_results(event, numbers, x=self._width - RIGHT_MARGIN, y=notes_top-TEXT_MARGIN)
+        self.draw_final_results(
+            event, numbers, x=self._width - RIGHT_MARGIN, y=notes_top - TEXT_MARGIN
+        )
 
-    def draw_metadate(self, metadata:Metadata, x:float, y:float) -> float:
+    def draw_metadate(self, metadata: Metadata, x: float, y: float) -> float:
         self._metadata = MetadataLine(metadata)
-        _, top = self._metadata.draw(self.canvas, (x,y))
+        _, top = self._metadata.draw(self.canvas, (x, y))
         return top
 
-    def draw_notes(self, event: KnockoutEvent, x: float, y: float) -> float:
-        top = y - 250
-        notes_box = NotesBox(self.canvas, (x - 450, top), (x, y))
+    def draw_notes(
+        self, event: KnockoutEvent, x: float, y: float
+    ) -> Tuple[float, float]:
+        top = y - 320
+        left = x - 1450
+        notes_box = NotesBox(self.canvas, (left, top), (x, y))
         src_filename = os.path.join(os.path.dirname(__file__), "notes.md")
         notes_box.read_markdown(src_filename)
         notes_box.add_text(
-            f"Rounds will be run in the following order:\n{event.calculate_play_order()}",
+            f"Rounds will be run in the following order: {event.calculate_play_order()}",
             bullet_point=True,
         )
-        return top
+        return left, top
 
     def draw_aux_races(
         self, event: KnockoutEvent, numbers: NumberBoxFactory, y_offset: float
@@ -204,7 +217,7 @@ class KnockoutSheet:
             numbers_factory=numbers,
             top_left=top_left,
             bottom_right=bottom_right,
-            style=self._aux_sizing
+            style=self._aux_sizing,
         )
 
     def draw_title(
@@ -233,7 +246,7 @@ class KnockoutSheet:
                 print("Updating the event title")
                 event.name = new_title
                 self.canvas.itemconfigure(text_id, text=event.name)
-                self.update() # Make sure the metadata is kept up to date.
+                self.update()  # Make sure the metadata is kept up to date.
 
         self.canvas.tag_bind(text_id, "<Button-1>", edit_title)
         self.canvas.tag_bind(
@@ -246,6 +259,7 @@ class KnockoutSheet:
             "<Leave>",
             func=lambda e: self.canvas.itemconfigure(text_id, font=NORMAL_TITLE_FONT),
         )
+        self._title_text = text_id
         return suptitle_bottom
 
     def draw_tree(
@@ -278,7 +292,7 @@ class KnockoutSheet:
             next_round_height: float,
             next_round_offset: float,
             round_name: str,
-            comment:str|None = None
+            comment: str | None = None,
         ) -> Tuple[float, float, float]:
             """Draws a box around a round in either the winners' or losers' brackets.
 
@@ -318,7 +332,7 @@ class KnockoutSheet:
                         width=2 * box_half_width - 2 * TEXT_MARGIN,
                         font=(FONT, FONT_NORMAL_SIZE),
                         fill="black",
-                        justify="center"
+                        justify="center",
                     )
                 )
             else:
@@ -401,7 +415,9 @@ class KnockoutSheet:
                     show_loser_label=show_loser_label
                     or isinstance(race.loser_next_race, Podium),
                     style=self._normal_sizing,
-                    lowest_hint_background=self._races[0].lowest_tag if len(self._races) > 1 else None
+                    lowest_hint_background=(
+                        self._races[0].lowest_tag if len(self._races) > 1 else None
+                    ),
                 )
 
             return x_end
@@ -594,7 +610,7 @@ class KnockoutSheet:
                 next_round_height=0,
                 next_round_offset=0,
                 round_name=f"Grand final",
-                comment=f"Best of {event.grand_final.heat_counts} heats"
+                comment=f"Best of {event.grand_final.heat_counts} heats",
             )
 
             # Check the results box.
@@ -671,12 +687,19 @@ class KnockoutSheet:
 
         # Scaling, width and height.
         drawing_width += RIGHT_MARGIN
+        height_fudge_factor = 0
+        if len(event.winners_bracket[0]) == 16:
+            # Adding some extra vertical padding to fit the notes box in for 32 races.
+            # TODO: Clean up.
+            height_fudge_factor = 180
+
         drawing_height = (
             losers_centreline
             + losers_height / 2
             + LABEL_HEIGHT
             + BOTTOM_MARGIN
             + EVENT_ORDER_ARROW_BOTTOM_MARGIN
+            + height_fudge_factor
         )
         self.set_size(self.a_paper_scale((drawing_width, drawing_height)))
         # self.manual_update()
@@ -731,12 +754,11 @@ class KnockoutSheet:
         # Event start message.
         EventStartArrow(self, get_coord_set(order[0], False))
 
-    def draw_final_results(self, event:KnockoutEvent, numbers:NumberBoxFactory, x:float, y:float) -> None:
+    def draw_final_results(
+        self, event: KnockoutEvent, numbers: NumberBoxFactory, x: float, y: float
+    ) -> None:
         self._final_results = FinalResults(
-            sheet=self,
-            event=event,
-            numbers_factory=numbers,
-            bottom_right=(x, y)
+            sheet=self, event=event, numbers_factory=numbers, bottom_right=(x, y)
         )
 
     def update(self) -> None:
@@ -747,6 +769,7 @@ class KnockoutSheet:
         self._aux_races.update()
         self._final_results.update()
         self._metadata.update()
+        self.canvas.itemconfigure(self._title_text, text=self._event.name)
         # self._frame.after(2000, self.manual_update)
 
     def _clear(self) -> None:

@@ -35,10 +35,11 @@ RIGHT_MARGIN = TOP_MARGIN
 BOTTOM_MARGIN = TOP_MARGIN
 TEXT_MARGIN = 10
 FONT = "Arial"
-FONT_SMALL_SIZE = 7
-FONT_NORMAL_SIZE = 10
-FONT_TITLE_SIZE = 15
-FONT_SUPTITLE_SIZE = 30
+FONT_SMALL_SIZE = 15
+FONT_NORMAL_SIZE = 20
+FONT_PRINT_BOX_SIZE = 25
+FONT_TITLE_SIZE = 30
+FONT_SUPTITLE_SIZE = 45
 FONT_BOLD = "bold"
 LABEL_WIDTH = 100
 LABEL_HEIGHT = 30
@@ -54,7 +55,7 @@ EVENT_ORDER_ARROW_COLOUR = "#00804b"
 EVENT_ORDER_ARROW_BOTTOM_MARGIN = 50
 BRACKET_VERTICAL_SEPARATION = 50
 BRACKET_LINE_THICKNESS = 2
-FIRST_COLUMN_HINT_WIDTH = LABEL_WIDTH + 50
+FIRST_COLUMN_HINT_WIDTH = LABEL_WIDTH + 150
 
 
 class RaceStyle:
@@ -380,7 +381,7 @@ class PrintNumberBox(NumberBox):
             x + LABEL_WIDTH / 2,
             y,
             anchor=ttkc.CENTER,
-            font=(FONT, FONT_NORMAL_SIZE),
+            font=(FONT, FONT_PRINT_BOX_SIZE),
         )
         self.update()
 
@@ -404,29 +405,41 @@ class InitialNumberBox(NumberBox):
         assert (
             self._race_branch is not None and self._race_branch.car is not None
         ), "The initial number box cannot cope with no RaceBranch provided or None car ID currently."
+        x -= FIRST_COLUMN_HINT_WIDTH - LABEL_WIDTH
         # Show the numbers as not a dropdown at all.
         self._line1 = self._sheet.canvas.create_text(
-            x + LABEL_WIDTH - SHORT_TEXT_MARGIN,
+            x + FIRST_COLUMN_HINT_WIDTH - SHORT_TEXT_MARGIN,
             y - TEXT_LINE_HEIGHT / 2,
             anchor=ttkc.E,
-            width=LABEL_WIDTH,
+            width=FIRST_COLUMN_HINT_WIDTH,
             text=self._line1_text(),
             font=(FONT, FONT_NORMAL_SIZE),
         )
+        number_left, _, _, _  = self._sheet.canvas.bbox(self._line1)
+
         self._line2 = self._sheet.canvas.create_text(
-            x + LABEL_WIDTH - SHORT_TEXT_MARGIN,
+            x + FIRST_COLUMN_HINT_WIDTH - SHORT_TEXT_MARGIN,
             y + TEXT_LINE_HEIGHT / 2,
             anchor=ttkc.E,
-            width=LABEL_WIDTH,
+            width=FIRST_COLUMN_HINT_WIDTH,
             text=self._line2_text(),
             font=(FONT, FONT_SMALL_SIZE, "italic"),
+        )
+        school_line_left = x + SHORT_TEXT_MARGIN
+        self._line_school = self._sheet.canvas.create_text(
+            school_line_left,
+            y - TEXT_LINE_HEIGHT,
+            anchor=ttkc.NW,
+            width=number_left - school_line_left - SHORT_TEXT_MARGIN,
+            text=self._school_text(),
+            font=(FONT, FONT_SMALL_SIZE)
         )
 
         # Background.
         self._background = self._sheet.canvas.create_rectangle(
             x,
             y - LABEL_HEIGHT / 2,
-            x + LABEL_WIDTH,
+            x + FIRST_COLUMN_HINT_WIDTH,
             y + LABEL_HEIGHT / 2,
             fill="#ffffff",
             # outline=""
@@ -445,9 +458,16 @@ class InitialNumberBox(NumberBox):
         ), "The initial number box cannot cope with no RaceBranch provided or None car ID currently."
         return f"{self._race_branch.car.car_name}"
 
+    def _school_text(self) -> str:
+        assert (
+            self._race_branch is not None and self._race_branch.car is not None
+        ), "The initial number box cannot cope with no RaceBranch provided or None car ID currently."
+        return f"{self._race_branch.car.school_id}"
+
     def update(self) -> None:
         self._sheet.canvas.itemconfigure(self._line1, text=self._line1_text())
         self._sheet.canvas.itemconfigure(self._line2, text=self._line2_text())
+        self._sheet.canvas.itemconfigure(self._line_school, text=self._school_text())
 
 
 class NumberBoxFactory(ABC):
@@ -1278,6 +1298,7 @@ class RaceDrawing:
                 y_centre,
                 anchor=anchor,
                 text=race.name(),
+                font=(FONT, FONT_NORMAL_SIZE)
             )
 
         def draw_normal_race() -> None:

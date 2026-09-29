@@ -39,7 +39,7 @@ from knockout_sheet_elements import (
     WINNERS_INITIAL_SPACING,
     EVENT_ORDER_ARROW_BOTTOM_MARGIN,
     ArrowBetweenRounds,
-    AuxilliaryRaceSheet,
+    AuxiliaryRaceSheet,
     EventStartArrow,
     FinalResults,
     MetadataLine,
@@ -70,7 +70,7 @@ class KnockoutSheet:
         self._height = 210 * SCALE
         self.canvas = ttk.Canvas(self._frame, width=self._width, height=self._height)
         self._races: List[RaceDrawing] = []
-        self._aux_races: AuxilliaryRaceSheet
+        self._aux_races: AuxiliaryRaceSheet
 
         # Add to the screen.
         if start_row is not None and start_column is not None:
@@ -211,7 +211,7 @@ class KnockoutSheet:
             LEFT_MARGIN + self._aux_race_section_width,
             self._height - BOTTOM_MARGIN,
         )
-        self._aux_races = AuxilliaryRaceSheet(
+        self._aux_races = AuxiliaryRaceSheet(
             sheet=self,
             event=event,
             numbers_factory=numbers,

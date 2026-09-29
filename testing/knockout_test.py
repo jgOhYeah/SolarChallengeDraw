@@ -210,7 +210,7 @@ class TestRace(unittest.TestCase):
             "This race should not be editable without cars.",
         )
 
-        aux_race_manager = AuxilliaryRaceManager(1)
+        aux_race_manager = AuxiliaryRaceManager(1)
 
         # Add some winners.
         assert (
@@ -245,7 +245,7 @@ class TestRace(unittest.TestCase):
 
         # Set competitors for one side of winner.
         assert left_race.left_branch.car is not None, "Testing error"
-        left_race._set_overall_winner(left_race.left_branch.car.car_id, AuxilliaryRaceManager(1))
+        left_race._set_overall_winner(left_race.left_branch.car.car_id, AuxiliaryRaceManager(1))
 
         # Tests with a single competitor filled.
         self.assertFalse(
@@ -276,7 +276,7 @@ class TestRace(unittest.TestCase):
         # Fill the second competitor.
         assert right_race.left_branch.car is not None, "Testing error"
         right_race._set_overall_winner(
-            right_race.left_branch.car.car_id, AuxilliaryRaceManager(1)
+            right_race.left_branch.car.car_id, AuxiliaryRaceManager(1)
         )
 
         # Tests with both competitors filled.
@@ -437,7 +437,7 @@ class TestEvent(unittest.TestCase):
         event = KnockoutEvent(cars, self.test_aux_races.__name__, 3)
 
         # Check that no auxilliary races are used.
-        for a in event.auxilliary_races.races:
+        for a in event.auxiliary_races.races:
             self.assertTrue(
                 a.left_branch.car is None and a.right_branch.car is None,
                 "No auxilliary races should be allocated yet.",
@@ -459,10 +459,10 @@ class TestEvent(unittest.TestCase):
         )
 
         # Mark a race as DNR.
-        prev_race._set_overall_winner(Race.WINNER_DNR, event.auxilliary_races)
+        prev_race._set_overall_winner(Race.WINNER_DNR, event.auxiliary_races)
 
         # Check the auxilliary race has been created and points to the previous race.
-        aux_race = event.auxilliary_races.races[0]
+        aux_race = event.auxiliary_races.races[0]
         self.assertIs(
             aux_race.left_branch.car,
             prev_race.right_branch.car,
@@ -620,10 +620,10 @@ class TestSheet(unittest.TestCase):
         def update(round: RoundId, race: int, winner: int) -> None:
             """Updates both sheets and redraws the updated one."""
             fresh_event.get_round(round)[race]._set_overall_winner(
-                winner, fresh_event.auxilliary_races
+                winner, fresh_event.auxiliary_races
             )
             updated_event.get_round(round)[race]._set_overall_winner(
-                winner, updated_event.auxilliary_races
+                winner, updated_event.auxiliary_races
             )
             updated_sheet.update()
 

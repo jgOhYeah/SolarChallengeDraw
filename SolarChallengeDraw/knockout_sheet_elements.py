@@ -18,7 +18,7 @@ if TYPE_CHECKING:
 
 from save_load import Metadata
 from car import Car
-from knockout import AuxilliaryRaceManager, KnockoutEvent
+from knockout import AuxiliaryRaceManager, KnockoutEvent
 from knockout_race import (
     BranchResult,
     Podium,
@@ -81,7 +81,7 @@ class NumberBox(ABC):
         x: float,
         y: float,
         race_branch: RaceBranch | None,
-        aux_race_manager: AuxilliaryRaceManager,
+        aux_race_manager: AuxiliaryRaceManager,
         sheet: KnockoutSheet,
         override_type_editable: bool,
         is_aux_race: bool,
@@ -93,13 +93,13 @@ class NumberBox(ABC):
             x (float): The x coordinate of the west side.
             y (float): The y coordinate of the horizontal centre line.
             race_branch (RaceBranch): The race branch whose number we are to show.
-            aux_race_manager (AuxilliaryRaceManager): Manager for auxilliary races.
+            aux_race_manager (AuxiliaryRaceManager): Manager for auxiliary races.
             sheet (KnockoutSheet): The sheet that is to be called back upon update.
             override_type_editable (bool): Whether to treat
                             BranchType.DEPENDENT_NOT_EDITABLE as
                             BranchType.DEPENDENT_EDITABLE.
             is_aux_race (bool): True when this number box is part of an
-                                auxilliary race. This changes text that is shown
+                                auxiliary race. This changes text that is shown
                                 when impossible to fill.
             heat (int): The heat number this box represents.
         """
@@ -226,7 +226,7 @@ class InteractiveNumberBox(NumberBox):
         x: float,
         y: float,
         race_branch: RaceBranch | None,
-        aux_race_manager: AuxilliaryRaceManager,
+        aux_race_manager: AuxiliaryRaceManager,
         sheet: KnockoutSheet,
         override_type_editable: bool,
         is_aux_race: bool,
@@ -239,7 +239,7 @@ class InteractiveNumberBox(NumberBox):
             y (float): The y coordinate of the middle.
             race_branch (RaceBranch | None): The branch to represent. None can
                 be used for an empty box.
-            aux_race_manager (AuxilliaryRaceManager): The auxilliary race
+            aux_race_manager (AuxiliaryRaceManager): The auxiliary race
                 manager to send when editing results.
             sheet (KnockoutSheet): The sheet that the box is being drawn on.
             override_type_editable (bool, optional): Whether to treat
@@ -475,7 +475,7 @@ class NumberBoxFactory(ABC):
         x: float,
         y: float,
         race_branch: RaceBranch | None,
-        aux_race_manager: AuxilliaryRaceManager,
+        aux_race_manager: AuxiliaryRaceManager,
         sheet: KnockoutSheet,
         override_type_editable: bool,
         is_aux_race: bool,
@@ -488,7 +488,7 @@ class NumberBoxFactory(ABC):
         x: float,
         y: float,
         race_branch: RaceBranch | None,
-        aux_race_manager: AuxilliaryRaceManager,
+        aux_race_manager: AuxiliaryRaceManager,
         sheet: KnockoutSheet,
         override_type_editable: bool,
         is_aux_race: bool,
@@ -524,7 +524,7 @@ class InteractiveNumberBoxFactory(NumberBoxFactory):
         x: float,
         y: float,
         race_branch: RaceBranch | None,
-        aux_race_manager: AuxilliaryRaceManager,
+        aux_race_manager: AuxiliaryRaceManager,
         sheet: KnockoutSheet,
         override_type_editable: bool,
         is_aux_race: bool,
@@ -548,7 +548,7 @@ class PrintNumberBoxFactory(NumberBoxFactory):
         x: float,
         y: float,
         race_branch: RaceBranch | None,
-        aux_race_manager: AuxilliaryRaceManager,
+        aux_race_manager: AuxiliaryRaceManager,
         sheet: KnockoutSheet,
         override_type_editable: bool,
         is_aux_race: bool,
@@ -736,7 +736,7 @@ class NotesBox:
         self._canvas = canvas
         self._top_left = top_left
         self._bottom_right = bottom_right
-        self._canvas.create_rectangle(self._top_left, self._bottom_right, fill="white")
+        self._border = self._canvas.create_rectangle(self._top_left, self._bottom_right, fill="white")
         self.y_pos: float = self._top_left[1] + TEXT_MARGIN
 
     def add_text(
@@ -767,7 +767,7 @@ class NotesBox:
                 self.y_pos,
                 anchor=ttkc.NE,
                 font=font,
-                text="• ",
+                text="•  ",
                 width=BULLET_POINT_WIDTH,
             )
 
@@ -814,6 +814,15 @@ class NotesBox:
             for line in file.readlines():
                 self.process_markdown_line(line)
 
+    def adjust_border_bottom(self) -> None:
+        self._bottom_right = self._bottom_right[0], self.y_pos + TEXT_MARGIN
+        self._canvas.coords(
+                self._border,
+                self._top_left[0],
+                self._top_left[1],
+                self._bottom_right[0],
+                self._bottom_right[1]
+            )
 
 class HintArrow(ABC):
     """Class that draws a hint arrow."""
@@ -951,7 +960,7 @@ class HintToArrow(HintArrow):
                     options=self._current_race.get_options(),
                     all_options_present=self._current_race.branches_filled(),
                     race_name=next_race.name(),
-                    aux_race=next_race.is_auxilliary_race,
+                    aux_race=next_race.is_auxiliary_race,
                 )
             )
         else:
@@ -1048,7 +1057,7 @@ class HintFromArrow(HintArrow):
         )
 
     def set_branch(self, branch: RaceBranch | None) -> None:
-        """Sets the race branch if it has changed. This is most likely to occur for auxilliary races.
+        """Sets the race branch if it has changed. This is most likely to occur for auxiliary races.
 
         Args:
             branch (RaceBranch): The race branch to update.
@@ -1247,7 +1256,7 @@ class RaceDrawing:
                         x=x,
                         y=y + box_offset(heat, heats),
                         race_branch=race_branch,
-                        aux_race_manager=self._event.auxilliary_races,
+                        aux_race_manager=self._event.auxiliary_races,
                         sheet=self._sheet,
                         override_type_editable=override_type_editable,
                         is_aux_race=is_aux_race,
@@ -1320,7 +1329,7 @@ class RaceDrawing:
             columns_wide (int): The number of columns wide to made the bracket.
             race (Race): The race to draw.
             show_result_box (bool): When True, draws the result of the race
-                next to it (only enable for the grand final and auxilliary races).
+                next to it (only enable for the grand final and auxiliary races).
             show_from_arrow (Tuple[bool, bool]): Whether to show an arrow from the previous races.
 
         Returns:
@@ -1359,7 +1368,7 @@ class RaceDrawing:
                     race.left_branch,
                     show_from_arrow[0],
                     lowest_hint_background=lowest_hint_background,
-                    is_aux_race=race.is_auxilliary_race,
+                    is_aux_race=race.is_auxiliary_race,
                 ),
                 self.draw_number(
                     x,
@@ -1367,7 +1376,7 @@ class RaceDrawing:
                     race.right_branch,
                     show_from_arrow[1],
                     lowest_hint_background=lowest_hint_background,
-                    is_aux_race=race.is_auxilliary_race,
+                    is_aux_race=race.is_auxiliary_race,
                 ),
             )
             self._lineset = BracketLineSetNormal(
@@ -1393,7 +1402,7 @@ class RaceDrawing:
                     race.theoretical_winner(),
                     show_from_arrow[0],
                     lowest_hint_background=lowest_hint_background,
-                    is_aux_race=race.is_auxilliary_race,
+                    is_aux_race=race.is_auxiliary_race,
                 ),
             )
             self._lineset = BracketLineSetBye(
@@ -1425,7 +1434,7 @@ class RaceDrawing:
                 show_from_arrow=ShowFromArrow.HIDE,
                 override_type_editable=True,
                 lowest_hint_background=lowest_hint_background,
-                is_aux_race=race.is_auxilliary_race,
+                is_aux_race=race.is_auxiliary_race,
             )
             right_side += LABEL_WIDTH
             arrow_height_offset = (len(self._results_box[0]) - 1) * HEAT_Y_SPACING / 2
@@ -1514,8 +1523,8 @@ class RaceDrawing:
         self._lineset.update()
 
 
-class AuxilliaryRaceSheet:
-    """Class that draws the auxilliary races in their box."""
+class AuxiliaryRaceSheet:
+    """Class that draws the auxiliary races in their box."""
 
     def __init__(
         self,
@@ -1526,7 +1535,7 @@ class AuxilliaryRaceSheet:
         bottom_right: Tuple[float, float],
         style: RaceStyle,
     ) -> None:
-        """Initialises the section for auxilliary races and draws them.
+        """Initialises the section for auxiliary races and draws them.
 
         Args:
             sheet (KnockoutSheet): The sheet to draw on.
@@ -1540,15 +1549,15 @@ class AuxilliaryRaceSheet:
             canvas=sheet.canvas, top_left=top_left, bottom_right=bottom_right
         )
         self._aux_title = self._box.add_text(
-            "Auxilliary races", (FONT, FONT_TITLE_SIZE)
+            "Auxiliary races", (FONT, FONT_TITLE_SIZE)
         )
         self._box.add_text(
-            "Auxilliary races are only used if there is a DNR in a primary knockout race with two competitors."
+            "Auxiliary races are only used if there is a DNR in a primary knockout race with two competitors."
         )
 
         # Create and draw the races.
         self._races: List[RaceDrawing] = []
-        for race in event.auxilliary_races.races:
+        for race in event.auxiliary_races.races:
             drawing = RaceDrawing(
                 sheet=sheet,
                 event=event,
@@ -1572,10 +1581,13 @@ class AuxilliaryRaceSheet:
             )
             self._box.y_pos += 2 * BRACKET_VERTICAL_SEPARATION + TEXT_MARGIN
 
+        # Resive the box.
+        self._box.adjust_border_bottom()
+
         self._event = event
 
     def update(self):
-        for race, drawing in zip(self._event.auxilliary_races.races, self._races):
+        for race, drawing in zip(self._event.auxiliary_races.races, self._races):
             drawing.assign_race(race)
             drawing.update()
 
@@ -1786,7 +1798,7 @@ class FinalResults(NotesBox):
                     x=x_pos,
                     y=y_pos,
                     race_branch=podium.branch,
-                    aux_race_manager=self._event.auxilliary_races,
+                    aux_race_manager=self._event.auxiliary_races,
                     sheet=self._sheet,
                     override_type_editable=False,
                     is_aux_race=False,

@@ -15,7 +15,7 @@ from abc import ABC, abstractmethod
 if TYPE_CHECKING:
     # We are in type checking mode and are allowed a circular import. This is always skipped in runtime.
     # https://stackoverflow.com/a/39757388
-    from knockout import AuxilliaryRaceManager
+    from knockout import AuxiliaryRaceManager
 
 
 class BranchType(StrEnum):
@@ -304,7 +304,7 @@ class Winnable(ABC):
 
     @property
     @abstractmethod
-    def is_auxilliary_race(self) -> bool:
+    def is_auxiliary_race(self) -> bool:
         """Checks if the current race / podium is an auxilliary race."""
         pass
 
@@ -371,7 +371,7 @@ class Podium(Winnable):
         return f"{self.position}{suffix} place"
 
     @property
-    def is_auxilliary_race(self) -> bool:
+    def is_auxiliary_race(self) -> bool:
         return False
 
     class Fields(Winnable.Fields):
@@ -512,14 +512,14 @@ class Race(Winnable):
         ]
 
     def set_winner(
-        self, heat: int, car_number: int, auxilliary_manager: AuxilliaryRaceManager
+        self, heat: int, car_number: int, auxilliary_manager: AuxiliaryRaceManager
     ) -> None:
         assert heat >= 0 and heat < len(self._heats), "Invalid heat number."
         assert car_number in self._get_options_ids(), "Invalid winning car ID provided."
         self._heats[heat] = car_number
         self._tally_heats(auxilliary_manager=auxilliary_manager)
 
-    def _tally_heats(self, auxilliary_manager: AuxilliaryRaceManager) -> None:
+    def _tally_heats(self, auxilliary_manager: AuxiliaryRaceManager) -> None:
         """Tallies up the number of heats that have been run and calls _set_overall_winner() to propagate the overall winner onward."""
         # Count up the number of wins for each.
         win_counts = {}.fromkeys(self._get_options_ids(), 0)
@@ -546,7 +546,7 @@ class Race(Winnable):
         return self._heats[heat]
 
     def _set_overall_winner(
-        self, car_number: int, auxilliary_manager: AuxilliaryRaceManager
+        self, car_number: int, auxilliary_manager: AuxiliaryRaceManager
     ) -> None:
         """Sets the winner of the race.
 
@@ -569,7 +569,7 @@ class Race(Winnable):
             optional_update(self.winner_next_race, None, True)
             if (
                 self.loser_next_race is not None
-                and not self.loser_next_race.is_auxilliary_race
+                and not self.loser_next_race.is_auxiliary_race
             ):
                 # There is a loser's race we need to deal with.
                 # We don't already have an auxilliary race in place and are allowed to add one.
@@ -588,7 +588,7 @@ class Race(Winnable):
         # Remove the auxilliary race if no longer a DNR.
         if (
             self.loser_next_race is not None
-            and self.loser_next_race.is_auxilliary_race
+            and self.loser_next_race.is_auxiliary_race
             and car_number != self.WINNER_DNR
         ):
             # The race was, but is no longer a DNR.
@@ -681,11 +681,11 @@ class Race(Winnable):
         return f"{self.name()}({self.left_branch.seed:>2d} {car_none_str(self.left_branch.car)}, {self.right_branch.seed:>2d} {car_none_str(self.right_branch.car)})"
 
     def name(self) -> str:
-        prefix = "AR" if self.is_auxilliary_race else "R"
+        prefix = "AR" if self.is_auxiliary_race else "R"
         return f"{prefix}{self.race_number}"
 
     @property
-    def is_auxilliary_race(self) -> bool:
+    def is_auxiliary_race(self) -> bool:
         return self._is_auxilliary_race
 
     class Fields(Winnable.Fields):

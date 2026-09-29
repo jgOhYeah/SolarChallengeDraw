@@ -322,14 +322,14 @@ class RoundId:
         return repr(self)
 
 
-class AuxilliaryRaceManager:
+class AuxiliaryRaceManager:
     """Class that manages axilliary races."""
 
     def __init__(self, races: List[Race]) -> None:
         self.races = races
 
     @classmethod
-    def create_empty(cls, max_races: int) -> AuxilliaryRaceManager:
+    def create_empty(cls, max_races: int) -> AuxiliaryRaceManager:
         """Initialises the race manager with a given number of races.
 
         Args:
@@ -344,7 +344,7 @@ class AuxilliaryRaceManager:
             )
             for i in range(max_races)
         ]
-        return AuxilliaryRaceManager(races)
+        return AuxiliaryRaceManager(races)
 
     def _get_first_free(self) -> Race:
         """Returns the first unused auxilliary race.
@@ -461,7 +461,7 @@ class AuxilliaryRaceManager:
 
         RACES = "Races"
 
-    def to_dict(self) -> Dict[AuxilliaryRaceManager.Fields, Any]:
+    def to_dict(self) -> Dict[AuxiliaryRaceManager.Fields, Any]:
         return {self.Fields.RACES: [r.to_dict() for r in self.races]}
 
 
@@ -474,14 +474,14 @@ class KnockoutEvent:
         losers_bracket: List[List[Race]],
         grand_final: Race,
         podiums: List[Podium],
-        auxilliary_races: AuxilliaryRaceManager,
+        auxilliary_races: AuxiliaryRaceManager,
         name: str,
     ) -> None:
         self.winners_bracket = winners_bracket
         self.losers_bracket = losers_bracket
         self.grand_final = grand_final
         self.podiums = podiums
-        self.auxilliary_races = auxilliary_races
+        self.auxiliary_races = auxilliary_races
         self.name = name
 
     @classmethod
@@ -513,7 +513,7 @@ class KnockoutEvent:
             losers_bracket[-2][0],
             heats=grand_final_heats
         )
-        auxilliary_races = AuxilliaryRaceManager.create_empty(max_auxilliary_races)
+        auxilliary_races = AuxiliaryRaceManager.create_empty(max_auxilliary_races)
         event = KnockoutEvent(
             winners_bracket=winners_bracket,
             losers_bracket=losers_bracket,
@@ -590,12 +590,12 @@ class KnockoutEvent:
             case RoundType.GRAND_FINAL:
                 return [self.grand_final]
             case RoundType.AUXILLIARY:
-                return self.auxilliary_races.races
+                return self.auxiliary_races.races
 
     def print(self) -> None:
         """Prints the event to the terminal."""
         print("Auxilliary races")
-        print_bracket([self.auxilliary_races.races])
+        print_bracket([self.auxiliary_races.races])
         print("Winners:")
         print_bracket(self.winners_bracket)
         print()
@@ -634,7 +634,7 @@ class KnockoutEvent:
             self.Fields.WINNERS_BRACKET: bracket_to_dict(self.winners_bracket),
             self.Fields.LOSERS_BRACKET: bracket_to_dict(self.losers_bracket),
             self.Fields.GRAND_FINAL: self.grand_final.to_dict(),
-            self.Fields.AUX_RACES: self.auxilliary_races.to_dict(),
+            self.Fields.AUX_RACES: self.auxiliary_races.to_dict(),
             self.Fields.PODIUMS: [p.to_dict() for p in self.podiums],
         }
 
@@ -692,11 +692,11 @@ class KnockoutEvent:
 
         # Aux races
         aux_races_list = LoadingRace.load_round_from_dict(
-            round_data=data[cls.Fields.AUX_RACES][AuxilliaryRaceManager.Fields.RACES],
+            round_data=data[cls.Fields.AUX_RACES][AuxiliaryRaceManager.Fields.RACES],
             aux_race=True,
             race_dict=race_dict,
         )
-        aux_races = AuxilliaryRaceManager(
+        aux_races = AuxiliaryRaceManager(
             cast(List[Race], aux_races_list)
         )  # Using cast here as python typing is strict for list type checking and I am being lazy.
 

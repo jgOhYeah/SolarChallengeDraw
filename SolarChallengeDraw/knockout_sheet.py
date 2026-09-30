@@ -157,6 +157,7 @@ class KnockoutSheet:
         metadata: Metadata,
         numbers: NumberBoxFactory,
         show_seed: bool = True,
+        show_metadata: bool = True
     ) -> None:
         """Draws the knockout event on the canvas.
 
@@ -176,9 +177,12 @@ class KnockoutSheet:
         notes_left, notes_top = self.draw_notes(
             event, self._width - RIGHT_MARGIN, self._height - BOTTOM_MARGIN
         )
-        metadata_top = self.draw_metadate(
-            metadata, notes_left - TEXT_MARGIN, self._height - BOTTOM_MARGIN
-        )
+        if show_metadata:
+            metadata_top = self.draw_metadate(
+                metadata, notes_left - TEXT_MARGIN, self._height - BOTTOM_MARGIN
+            )
+        else:
+            self._metadata = None
         self.draw_aux_races(event, numbers, suptitle_bottom)
         self.draw_final_results(
             event, numbers, x=self._width - RIGHT_MARGIN, y=notes_top - TEXT_MARGIN
@@ -768,7 +772,8 @@ class KnockoutSheet:
 
         self._aux_races.update()
         self._final_results.update()
-        self._metadata.update()
+        if self._metadata:
+            self._metadata.update()
         self.canvas.itemconfigure(self._title_text, text=self._event.name)
         # self._frame.after(2000, self.manual_update)
 

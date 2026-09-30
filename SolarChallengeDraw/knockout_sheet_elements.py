@@ -402,6 +402,17 @@ class InitialNumberBox(NumberBox):
             self._race_branch is not None and self._race_branch.car is not None
         ), "The initial number box cannot cope with no RaceBranch provided or None car ID currently."
         x -= FIRST_COLUMN_HINT_WIDTH
+
+        # Background.
+        self._background = self._sheet.canvas.create_rectangle(
+            x,
+            y - LABEL_HEIGHT / 2,
+            x + FIRST_COLUMN_HINT_WIDTH + LABEL_WIDTH,
+            y + LABEL_HEIGHT / 2,
+            fill="#ffffff",
+            # outline=""
+        )
+
         # Show the numbers as not a dropdown at all.
         self._number_line = self._sheet.canvas.create_text(
             x - SHORT_TEXT_MARGIN + FIRST_COLUMN_HINT_WIDTH + LABEL_WIDTH,
@@ -430,17 +441,6 @@ class InitialNumberBox(NumberBox):
         #     text=self._school_text(),
         #     font=(FONT, FONT_SMALL_SIZE),
         # )
-
-        # Background.
-        self._background = self._sheet.canvas.create_rectangle(
-            x,
-            y - LABEL_HEIGHT / 2,
-            x + FIRST_COLUMN_HINT_WIDTH + LABEL_WIDTH,
-            y + LABEL_HEIGHT / 2,
-            fill="#ffffff",
-            # outline=""
-        )
-        self._sheet.canvas.tag_lower(self._background, self._number_line)
 
     def _number_text(self) -> str:
         assert (
@@ -1293,18 +1293,35 @@ class RaceDrawing:
 
         def draw_seed() -> None:
             assert race_branch is not None, "Needs a race branch to show a seed."
-            self._sheet.canvas.create_text(
+            text = self._sheet.canvas.create_text(
                 x + SHORT_TEXT_MARGIN,
                 y,
                 anchor=ttkc.W,
                 text=race_branch.seed,
-                fill="red",
+                font=(FONT, FONT_NORMAL_SIZE, FONT_BOLD),
+                fill="white",
             )
+            left, top, right, bottom = self._sheet.canvas.bbox(text)
+            background = self._sheet.canvas.create_rectangle(
+                left - SHORT_TEXT_MARGIN,
+                # top - SHORT_TEXT_MARGIN,
+                y - LABEL_HEIGHT/2,
+                right + SHORT_TEXT_MARGIN,
+                # bottom + SHORT_TEXT_MARGIN,
+                y + LABEL_HEIGHT/2,
+                fill="#f00",
+                outline=''
+            )
+            self._sheet.canvas.tag_raise(text, background)
+
+
+        # Draw the boxes before the seed number to ensure it is below.
+        boxes = draw_number_boxes()            
 
         if race_branch is not None and self._show_seed:
             draw_seed()
 
-        return draw_number_boxes(), draw_from_arrows()
+        return boxes, draw_from_arrows()
 
     def draw_race(
         self,

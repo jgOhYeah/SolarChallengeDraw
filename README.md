@@ -1,7 +1,17 @@
-# Solar challenge race draw
+# Solar challenge race draw <!-- omit in toc -->
 A programme for generating and managing a double elimination draw for a model solar car race.
 This is a work in progress.
 
+## Contents <!-- omit in toc -->
+- [Example event](#example-event)
+- [Installation and setup.](#installation-and-setup)
+  - [Prerequisites](#prerequisites)
+  - [Obtaining the code and virtual environment setup](#obtaining-the-code-and-virtual-environment-setup)
+  - [Running the programme](#running-the-programme)
+- [Cars CSV file](#cars-csv-file)
+
+## Example event
+An example event and more explanation of the approach to seeding and the event structure is [here](./literature/ExampleEvent.md).
 
 ## Installation and setup.
 ### Prerequisites

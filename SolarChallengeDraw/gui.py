@@ -126,7 +126,8 @@ class KnockoutTab(AppTab):
         self._gui_sheet.draw_canvas(
             event,
             metadata=metadata,
-            numbers=InteractiveNumberBoxFactory(),
+            # numbers=InteractiveNumberBoxFactory(),
+            numbers=PrintNumberBoxFactory(),
             show_seed=show_seed,
         )
         self._print_sheet.draw_canvas(

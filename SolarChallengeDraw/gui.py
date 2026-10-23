@@ -50,14 +50,66 @@ class AppTab(ABC):
 class EventsTab(AppTab):
     """Class to handle the events tab."""
 
-    def __init__(self, root: ttk.Notebook, gui: Gui) -> None:
+    def __init__(
+        self, root: ttk.Notebook, gui: Gui, csv_settings: CarCSVLoader.CSVLoadSettings
+    ) -> None:
         super().__init__(root, "Event")
         self._gui = gui
-        ttk.Button(
-            self._frame, text="Create new event from CSV", command=self._load_csv
-        ).grid(
+
+        # CSV settings
+        csv_settings_frame = ttk.Labelframe(self._frame, text="CSV import settings")
+        csv_settings_frame.grid(
             row=0, column=0, sticky=ttkc.NSEW, padx=PAD_FULL, pady=(PAD_FULL, PAD_HALF)
         )
+        csv_settings_frame.columnconfigure(0, weight=1)
+        # TODO: Gui control of csv load settings
+        ttk.Label(csv_settings_frame, text=f"Some settings are currently set using the command line. Currently:\n{csv_settings}").grid(row=0,
+            column=0,
+            columnspan=2,
+            sticky=ttkc.NSEW,
+            padx=PAD_FULL,
+            pady=(PAD_FULL, PAD_HALF),)
+        # ttk.Checkbutton(
+        #     csv_settings_frame, text="Randomise cars when loading from CSV"
+        # ).grid(
+        #     row=0,
+        #     column=0,
+        #     columnspan=2,
+        #     sticky=ttkc.NSEW,
+        #     padx=PAD_FULL,
+        #     pady=(PAD_FULL, PAD_HALF),
+        # )
+        # ttk.Label(csv_settings_frame, text="Grand final heats").grid(
+        #     row=1, column=0, padx=PAD_FULL, pady=(PAD_HALF, PAD_HALF)
+        # )
+        # heats_var = tk.IntVar(csv_settings_frame, value=csv_settings.grand_final_heats)
+        # def update_heats(a:str, b:str, c:str):
+        #     print(a, b, c)
+        # heats_var.trace_add('write', update_heats)
+        # heats_spinbox = ttk.Spinbox(
+        #     csv_settings_frame, from_=1, textvariable=heats_var, increment=1
+        # )
+        # heats_spinbox.grid(
+        #     row=1, column=1, sticky=ttkc.NSEW, padx=PAD_FULL, pady=(PAD_HALF, PAD_HALF)
+        # )
+        # ttk.Label(csv_settings_frame, text="Auxilliary races").grid(
+        #     row=2, column=0, padx=PAD_FULL, pady=(PAD_HALF, PAD_HALF)
+        # )
+        # ttk.Spinbox(csv_settings_frame).grid(
+        #     row=2, column=1, sticky=ttkc.NSEW, padx=PAD_FULL, pady=(PAD_HALF, PAD_HALF)
+        # )
+        ttk.Button(
+            csv_settings_frame, text="Create new event from CSV", command=self._load_csv
+        ).grid(
+            row=3,
+            column=0,
+            columnspan=2,
+            sticky=ttkc.NSEW,
+            padx=PAD_FULL,
+            pady=(PAD_HALF, PAD_FULL),
+        )
+
+        # JSON load.
         ttk.Button(
             self._frame, text="Load existing event from JSON", command=self._load_json
         ).grid(
@@ -180,6 +232,7 @@ class Gui:
         ghostscript_path: str,
         initial_csv: str | None,
         initial_json: str | None,
+        csv_load_settings: CarCSVLoader.CSVLoadSettings,
         show_seed: bool,
     ) -> None:
         self._show_seed = show_seed
@@ -206,13 +259,13 @@ class Gui:
             initial_path=initial_csv,
             read_only=True,
         )
-        self._csv_loader = CarCSVLoader()
+        self._csv_loader = CarCSVLoader(csv_load_settings=csv_load_settings)
         self.loaded: bool = False  # Indicates whether an event is currently loaded.
 
         # Hotkey to save current file
         self._root.bind("<Control-s>", self.save_event)
         notebook = ttk.Notebook(self._root)
-        self._events = EventsTab(notebook, gui=self)
+        self._events = EventsTab(notebook, gui=self, csv_settings=csv_load_settings)
         # self._cars = CarsTab(notebook)
         # self._round_robin = RoundRobinTab(notebook)
         self.knockout = KnockoutTab(notebook, ghostscript_path, self)
@@ -231,6 +284,7 @@ class Gui:
         self._csv_loader.load()
         self.json_path.ok_to_save = False  # Invalidate the previous json file path.
         self.load_and_draw(self._csv_loader)
+        self._json_loader.metadata = self._csv_loader.metadata
 
     def load_json_from_path(self, filename: str) -> None:
         self._json_loader.filename = filename
@@ -239,7 +293,9 @@ class Gui:
 
     def load_and_draw(self, loader: Loader) -> None:
         self.loaded = True
-        self.knockout.draw_event(event=loader.knockout, metadata=loader.metadata, show_seed=self._show_seed)
+        self.knockout.draw_event(
+            event=loader.knockout, metadata=loader.metadata, show_seed=self._show_seed
+        )
         self._json_loader.copy_from(loader)
 
     def save_event(self, _) -> None:

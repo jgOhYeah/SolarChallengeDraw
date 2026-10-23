@@ -18,14 +18,15 @@ from knockout_race import Race, RaceBranch
 
 
 class Metadata:
-    current_hash: str|None = None
+    current_hash: str | None = None
 
-    def __init__(self) -> None:
+    def __init__(self, rng_seed: int | None, cars_randomised: bool) -> None:
         if self.current_hash is None:
             # Only check the first time to reduce extra process calls.
             self.current_hash = self._get_git_revision_short_hash()
         self.git_hash = self.current_hash
-
+        self.rng_seed = rng_seed
+        self.cars_randomised = cars_randomised
         self.update()
 
     def update(self) -> None:
@@ -40,33 +41,54 @@ class Metadata:
             str: The short hash.
         """
         try:
-            result = subprocess.check_output(["git", "rev-parse", "--short", "HEAD"]).decode("ascii").strip()
+            result = (
+                subprocess.check_output(["git", "rev-parse", "--short", "HEAD"])
+                .decode("ascii")
+                .strip()
+            )
         except:
-            result ="???"
+            result = "???"
 
         return result
 
     class Fields(StrEnum):
         GIT_HASH = "Git hash"
         DATE = "Date"
+        RNG_SEED = "RNG seed"
+        CARS_RANDOMISED = "Cars randomised"
 
     TIME_FORMAT = "%Y-%m-%d %H:%M"
 
     def to_dict(self) -> Dict[Metadata.Fields, Any]:
         return {
             self.Fields.GIT_HASH: self.git_hash,
-            self.Fields.DATE: self.modification_date.strftime(self.TIME_FORMAT)
+            self.Fields.DATE: self.modification_date.strftime(self.TIME_FORMAT),
+            self.Fields.RNG_SEED: self.rng_seed,
+            self.Fields.CARS_RANDOMISED: self.cars_randomised,
         }
 
     @classmethod
-    def from_dict(cls, dict:Dict[Metadata.Fields, Any]) -> Metadata:
-        metadata = Metadata()
-        metadata.modification_date = datetime.strptime(dict[cls.Fields.DATE], cls.TIME_FORMAT)
+    def from_dict(cls, dict: Dict[Metadata.Fields, Any]) -> Metadata:
+        metadata = Metadata(
+            rng_seed=dict.get(cls.Fields.RNG_SEED),
+            cars_randomised=dict.get(cls.Fields.CARS_RANDOMISED, False),
+        )
+        metadata.modification_date = datetime.strptime(
+            dict[cls.Fields.DATE], cls.TIME_FORMAT
+        )
         metadata.git_hash = dict[cls.Fields.GIT_HASH]
         return metadata
 
     def __str__(self) -> str:
-        base = f"Modified {self.modification_date.isoformat(sep=' ', timespec='minutes')}, Git commit '{self.git_hash}'"
+        if self.cars_randomised:
+            rng_msg = f"intial seeding randomised"
+            if self.rng_seed is not None:
+                rng_msg += f" with seed {self.rng_seed}, "
+            else:
+                rng_msg += ", "
+        else:
+            rng_msg = ""
+        base = f"Modified {self.modification_date.isoformat(sep=' ', timespec='minutes')}, {rng_msg}Git commit '{self.git_hash}'"
         if self.current_hash != self.git_hash:
             extras = f" (opened with '{self.current_hash}')"
         else:
@@ -235,40 +257,61 @@ class JSONLoader(Loader):
             self._metadata = Metadata.from_dict(metadata_dict)
         else:
             print("WARNING: No metadata present. Creating fresh metadata.")
-            self._metadata = Metadata()
+            self._metadata = Metadata(rng_seed=None, cars_randomised=False)
 
 
 class CarCSVLoader(Loader):
     """Loads cars from a CSV file."""
 
+    @dataclass
+    class CSVLoadSettings:
+        grand_final_heats: int
+        randomise: bool
+        aux_races: int
+        random_seed: int | None
+
     def __init__(
         self,
+        csv_load_settings: CarCSVLoader.CSVLoadSettings,
         filename: str | None = None,
         cars: List[Car] | None = None,
         knockout: KnockoutEvent | None = None,
         metadata: Metadata | None = None,
-        grand_final_heats: int = 3,  # TODO: Customisable.
     ) -> None:
         super().__init__(
             cars=cars, knockout=knockout, filename=filename, metadata=metadata
         )
-        self.grand_final_heats = grand_final_heats
+        self.load_settings = csv_load_settings
 
-    def load(self) -> None:  # TODO: Randomise cars with a seed if needed.
+    def randomise_cars(self, cars: List[Car]) -> List[Car]:
+        """Randomises the cars."""
+        print("Randomising cars")
+        rng = np.random.default_rng(self.load_settings.random_seed)
+        order = rng.permutation(len(cars))
+        return [cars[i] for i in order]
+
+    def load(self) -> None:
         self._check_filename()
         car_df = pd.read_csv(cast(str, self.filename))
-        self._cars = [
+        cars = [
             Car.from_dict(cast(Dict[str, Any], dt))
             for dt in car_df.to_dict(orient="records")
         ]
+        self._cars = self.randomise_cars(cars) if self.load_settings.randomise else cars
 
-        aux_races = 2 ** (int(np.ceil(np.log2(len(self._cars)))) - 1) + 2
+        if self.load_settings.aux_races is None:
+            aux_races = 2 ** (int(np.ceil(np.log2(len(self._cars)))) - 1) + 2
+        else:
+            aux_races = self.load_settings.aux_races
 
         self._knockout = KnockoutEvent.new_from_cars(
             cars=self.cars,
             name=os.path.basename(cast(str, self.filename)),
             max_auxilliary_races=aux_races,
-            grand_final_heats=self.grand_final_heats,
+            grand_final_heats=self.load_settings.grand_final_heats,
         )
 
-        self._metadata = Metadata()
+        self._metadata = Metadata(
+            rng_seed=self.load_settings.random_seed,
+            cars_randomised=self.load_settings.randomise,
+        )

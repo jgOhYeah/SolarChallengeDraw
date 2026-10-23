@@ -200,13 +200,6 @@ def create_loosers_draw(winners: List[List[Race]]) -> List[List[Race]]:
     return losers
 
 
-def randomise_cars(cars: List[Car]) -> List[Car]:
-    """Randomises the cars."""
-    rng = np.random.default_rng()
-    order = rng.permutation(len(cars))
-    return [cars[i] for i in order]
-
-
 def assign_cars(cars: List[Car], first_round: List[Race], reverse: bool = True) -> None:
     """Assigns cars to the first round of the draw."""
     sorted_cars: List[Car | None] = sorted(

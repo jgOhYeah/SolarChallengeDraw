@@ -9,7 +9,7 @@ from typing import List, Literal, Tuple, cast
 import numpy as np
 import ttkbootstrap as ttk
 import ttkbootstrap.constants as ttkc
-from tkinter import simpledialog
+from tkinter import TclError, simpledialog
 from knockout_race import (
     Podium,
     Race,
@@ -187,6 +187,14 @@ class KnockoutSheet:
         self.draw_final_results(
             event, numbers, x=self._width - RIGHT_MARGIN, y=notes_top - TEXT_MARGIN
         )
+        try:
+            self.draw_logo(x=self._width - RIGHT_MARGIN, y=TOP_MARGIN)
+        except TclError:
+            print("Couldn't load the logo image.")
+
+    def draw_logo(self, x, y) -> None:
+        self._logo = ttk.PhotoImage(file="../vmsvc.png")
+        self.canvas.create_image(x, y, image = self._logo, anchor = ttkc.NE)
 
     def draw_metadate(self, metadata: Metadata, x: float, y: float) -> float:
         self._metadata = MetadataLine(metadata)

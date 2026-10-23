@@ -16,8 +16,6 @@ Written by Jotham Gates, 2025.
 import argparse
 import platform
 import gui
-import knockout
-import car
 from save_load import CarCSVLoader
 
 
@@ -28,7 +26,11 @@ def get_arguments() -> argparse.Namespace:
     )
     load_args = parser.add_mutually_exclusive_group()
     load_args.add_argument(
-        "-c", "--cars", type=str, default=None, help="CSV file containing cars to load."
+        "-c",
+        "--cars",
+        type=str,
+        default=None,
+        help="CSV file containing carss to load.",
     )
     load_args.add_argument(
         "-j",
@@ -48,6 +50,30 @@ def get_arguments() -> argparse.Namespace:
         "--show-seeds",
         action="store_true",
         help="If provided, shows the predicted seed position for each race entrant.",
+    )
+    csv_group = parser.add_argument_group(
+        title="Parameters used when loading from CSVs",
+        description="These parameters are only used when loading and creating an event from CSV file.",
+    )
+    csv_group.add_argument(
+        "-r",
+        "--randomise",
+        action="store_true",
+        help="If provided, randomises the list of cars prior to seeding for fairness.",
+    )
+    csv_group.add_argument(
+        "--rng-seed",
+        type=int,
+        default=None,
+        help="Seed for the random number generator that randomises the cars. This allows for backtracking / predictability if need be whilst remaining fair.",
+    )
+    csv_group.add_argument("-a", "--aux-races", type=int, default=None)
+    csv_group.add_argument(
+        "-b",
+        "--gf-heats",
+        type=int,
+        default=3,
+        help="The number of heats to do a best of in the grand final.",
     )
     return parser.parse_args()
 
@@ -83,6 +109,12 @@ if __name__ == "__main__":
         ghostscript_path=ghostscript_location(provided=args.ghostscript),
         initial_csv=args.cars,
         initial_json=args.json,
+        csv_load_settings=CarCSVLoader.CSVLoadSettings(
+            grand_final_heats=args.gf_heats,
+            randomise=args.randomise,
+            aux_races=args.aux_races,
+            random_seed=args.rng_seed,
+        ),
         show_seed=args.show_seeds,
     )
     gui_ui.run()

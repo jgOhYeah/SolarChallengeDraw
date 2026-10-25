@@ -2,6 +2,25 @@
 This is an example event to demonstrate seeding and the slightly modified double elimination draw. All competitors will have at least two races. One of the main features of this particular system is that it allows for the situation where both competitors “lose” by not running in a knockout race.
 
 ## Contents <!-- omit in toc -->
+- [Event structure](#event-structure)
+  - [Primary draw](#primary-draw)
+  - [Second chance draw](#second-chance-draw)
+  - [Auxiliary races](#auxiliary-races)
+  - [Grand final](#grand-final)
+- [Entrants](#entrants)
+- [Initial seed](#initial-seed)
+- [Event progress](#event-progress)
+  - [Round P1](#round-p1)
+  - [Round SC1](#round-sc1)
+  - [Round P2](#round-p2)
+  - [Round SC2](#round-sc2)
+  - [Round SC3](#round-sc3)
+  - [Round P3](#round-p3)
+  - [Round SC4](#round-sc4)
+  - [Grand final](#grand-final-1)
+- [Summary](#summary)
+- [References](#references)
+
 
 ## Event structure
 The event consists of two main brackets; a *primary draw* (also known as the *winner's bracket*) and the *second chance draw* (also known as the *loser's bracket*). There are also a collection of *auxiliary races* and a *grand final*.

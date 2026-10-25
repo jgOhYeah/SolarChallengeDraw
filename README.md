@@ -66,19 +66,19 @@ An example event and more explanation of the approach to seeding and the event s
 > Again, this may be `pip` or `pip3` depending on the computer.
 
 ### Running the programme
-> [!NOTE]
-> This is still a work in progress and will change.
-
 - If the terminal has been closed since the virtual environment was last activated, change working directory (`cd`) to the `SolarChallengeDraw` folder and activate it.
 - Run the tool using:
     ```bash
-    python[3] SolarChallengeDraw --cars=database/cars.csv
+    python[3] SolarChallengeDraw
     ```
-    Where `database/cars.csv` is a csv file that contains a list of cars.
+    There are several command-line options available. Run:
+    ```bash
+    python[3] SolarChallengeDraw -h
+    ```
+    for more details.
 
 ## Cars CSV file
-> [!NOTE]
-> This is still a work in progress and will change.
+The CSV file that is used to generate the draw must have the column headings `Car ID`, `School ID`, `Car name` and `Points`. The columns `Scruitineered`, `Present for round robin` and `Present for knockout` are optional and whilst used during importing, don't do much at the moment.
 
 For example:
 
